@@ -16,7 +16,21 @@ export default function CreateProductForm() {
     formState: { errors },
   } = useForm<FormData>();
 
-  const onSubmit: SubmitHandler<FormData> = (data) => console.log(data);
+  const onSubmit: SubmitHandler<FormData> = async (data) => {
+    const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+        console.log("Success, ", result.message, result.product);
+    } else {
+        console.log(result.error);
+    }
+  };
 
   return (
     <div>
