@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { productSchema } from "@/app/schemas/productSchema";
 import supabase from '@/app/lib/supabaseClient';
 
 export async function POST(request: NextRequest) {
@@ -6,10 +7,20 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json();
     
+    const validation = productSchema.safeParse(body);
+
+    if (!validation.success) {
+        return NextResponse.json(
+            { error: validation.error.issues },
+            { status: 400 }
+        );
+    }
+
+    const validatedData = validation.data;
     
     const { data, error } = await supabase
       .from('products')
-      .insert([body])
+      .insert([validatedData])
       .select();
     
     
