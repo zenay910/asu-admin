@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { logout } from '../actions'
+import Link from 'next/link'
 
 export default async function Dashboard() {
   const supabase = await createClient()
@@ -64,6 +65,18 @@ export default async function Dashboard() {
               View recent system activity here.
             </p>
           </div>
+
+          <Link
+            href="/dashboard/inventory/new"
+            className="block bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
+          >
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-2">
+              Add Inventory
+            </h2>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Add new inventory items to the system.
+            </p>
+          </Link>
         </div>
       </main>
     </div>
