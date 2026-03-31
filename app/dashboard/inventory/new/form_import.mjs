@@ -124,6 +124,13 @@ function getField(formInput, key) {
   return formInput?.[key] ?? null;
 }
 
+function getPreUploadedImageUrls(formInput) {
+  if (!isFormData(formInput)) {
+    return formInput?.imageUrls ? (Array.isArray(formInput.imageUrls) ? formInput.imageUrls : [formInput.imageUrls]) : [];
+  }
+  return formInput.getAll('imageUrls').filter((url) => typeof url === 'string' && url.trim());
+}
+
 async function collectImages(formInput, explicitImages = []) {
   const images = [];
 
@@ -162,6 +169,8 @@ function buildProductPayload(formInput) {
   const description_long = norm(getField(formInput, 'description_long'));
   const dimensions = parseDimensionsField(getField(formInput, 'dimensions'));
   const features = parseFeaturesField(getField(formInput, 'features'));
+  const ageRaw = norm(getField(formInput, 'age'));
+  const age = ageRaw ? Number(String(ageRaw).replace(/[^0-9]/g, '')) : null;
 
   if (!title) {
     throw new Error('Missing required field: title');
@@ -185,6 +194,7 @@ function buildProductPayload(formInput) {
     fuel,
     unit_type: unit_type || 'Individual',
     color,
+    age: Number.isFinite(age) ? age : null,
     features,
     condition: condition || 'Good',
     status,
@@ -198,14 +208,11 @@ function buildProductPayload(formInput) {
  *
  * @param {Object|FormData} formInput - Plain object or FormData containing product fields.
  * @param {Object} options
- * @param {Array<{name: string, data: File, contentType?: string}>} [options.images]
  * @param {string} [options.bucket]
- * @param {boolean} [options.skipImages]
  * @returns {Promise<{productId: string, uploadedImages: number}>}
  */
 export async function importProductFromForm(formInput, options = {}) {
   const supabase = await createClient();
-  const bucket = options.bucket || process.env.SUPABASE_BUCKET || process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances';
 
   const {
     data: { user },
@@ -217,6 +224,7 @@ export async function importProductFromForm(formInput, options = {}) {
   }
 
   const payload = buildProductPayload(formInput);
+  const preUploadedImageUrls = getPreUploadedImageUrls(formInput);
 
   const { data: inserted, error: insertError } = await supabase
     .from('products')
@@ -233,42 +241,16 @@ export async function importProductFromForm(formInput, options = {}) {
   }
 
   const productId = inserted.id;
-
-  if (options.skipImages) {
-    return { productId, uploadedImages: 0 };
-  }
-
-  const images = await collectImages(formInput, options.images || []);
-  const sortedImages = sortFilesSmart(images);
-
   let uploadedImages = 0;
 
-  for (let i = 0; i < sortedImages.length; i++) {
-    const image = sortedImages[i];
-    const ext = extensionFromName(image.name) || 'jpg';
-    const storageName = `${String(i + 1).padStart(3, '0')}.${ext}`;
-    const objectPath = `${productId}/original/${storageName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(objectPath, image.data, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: guessType(image.name, image.contentType),
-      });
-
-    if (uploadError) {
-      throw new Error(`Image upload failed (${image.name}): ${uploadError.message}`);
-    }
-
-    const publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath).data.publicUrl;
-
+  // Insert pre-uploaded image URLs
+  for (const url of preUploadedImageUrls) {
     const { error: imageRowError } = await supabase
       .from('product_images')
-      .insert({ product_id: productId, photo_url: publicUrl });
+      .insert({ product_id: productId, photo_url: url });
 
     if (imageRowError) {
-      throw new Error(`Image row insert failed (${image.name}): ${imageRowError.message}`);
+      throw new Error(`Image row insert failed: ${imageRowError.message}`);
     }
 
     uploadedImages += 1;

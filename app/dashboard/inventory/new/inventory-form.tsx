@@ -1,15 +1,14 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  createInventoryItem,
-  initialInventoryFormState,
-} from './actions'
+import { uploadImages } from '@/lib/supabase/storage'
+import { createInventoryItem } from './actions'
+import { initialInventoryFormState } from './types'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -26,12 +25,66 @@ export default function InventoryForm() {
     createInventoryItem,
     initialInventoryFormState
   )
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.currentTarget.files || [])
+    setImageFiles(files)
+    setUploadError(null)
+  }
+
+  const handleUploadImages = async () => {
+    if (imageFiles.length === 0) {
+      setUploadError('Please select at least one image')
+      return
+    }
+
+    setIsUploading(true)
+    setUploadError(null)
+
+    try {
+      // Generate a temporary product ID for storage (will be replaced after form submission)
+      const tempProductId = `temp-${Date.now()}`
+      const urls = await uploadImages(imageFiles, tempProductId)
+      setUploadedImageUrls(urls)
+      setImageFiles([])
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload images')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleRemoveImage = (index: number) => {
+    setUploadedImageUrls(uploadedImageUrls.filter((_, i) => i !== index))
+  }
+
+  const handleFormAction = async (formData: FormData) => {
+    // Add uploaded image URLs to the form data
+    uploadedImageUrls.forEach((url) => {
+      formData.append('imageUrls', url)
+    })
+    formAction(formData)
+  }
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={handleFormAction} className="space-y-5">
       {state.error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
           {state.error}
+        </div>
+      ) : null}
+
+      {uploadError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
+          {uploadError}
         </div>
       ) : null}
 
@@ -132,7 +185,7 @@ export default function InventoryForm() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="color">Color</Label>
           <Input id="color" name="color" placeholder="e.g. Stainless Steel" />
@@ -141,6 +194,11 @@ export default function InventoryForm() {
         <div className="space-y-2">
           <Label htmlFor="capacity">Capacity</Label>
           <Input id="capacity" name="capacity" type="number" min="0" step="0.1" placeholder="e.g. 4.5" />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="age">Age (Year)</Label>
+          <Input id="age" name="age" type="number" min="1900" step="1" placeholder="e.g. 2020" />
         </div>
       </div>
 
@@ -160,8 +218,55 @@ export default function InventoryForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="images">Images</Label>
-        <Input id="images" name="images" type="file" accept="image/*" multiple />
+        <Label>Images</Label>
+        <div className="flex gap-2">
+          <Input
+            ref={fileInputRef}
+            id="images"
+            name="images"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleImageSelect}
+            disabled={isUploading}
+          />
+          <Button
+            type="button"
+            onClick={handleUploadImages}
+            disabled={isUploading || imageFiles.length === 0}
+            variant="secondary"
+          >
+            {isUploading ? 'Uploading...' : 'Upload Images'}
+          </Button>
+        </div>
+        {uploadedImageUrls.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Uploaded images ({uploadedImageUrls.length}):
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {uploadedImageUrls.map((url, index) => (
+                <div
+                  key={index}
+                  className="relative inline-block rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700"
+                >
+                  <img
+                    src={url}
+                    alt={`Preview ${index + 1}`}
+                    className="w-20 h-20 object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveImage(index)}
+                    className="absolute top-0 right-0 bg-red-500 text-white text-xs p-1 rounded-tl-md hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3 pt-2">

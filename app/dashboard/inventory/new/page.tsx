@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import InventoryForm from './inventory-form'
 
+export const maxDuration = 60
+
 export default function NewInventoryPage() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">

@@ -2,16 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { importProductFromForm } from './form_import.mjs'
-
-export type InventoryFormState = {
-  error: string | null
-  success: string | null
-}
-
-export const initialInventoryFormState: InventoryFormState = {
-  error: null,
-  success: null,
-}
+import type { InventoryFormState } from './types'
 
 export async function createInventoryItem(
   _prevState: InventoryFormState,
