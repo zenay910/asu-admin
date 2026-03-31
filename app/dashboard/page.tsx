@@ -77,6 +77,19 @@ export default async function Dashboard() {
               Add new inventory items to the system.
             </p>
           </Link>
+
+          <Link
+            href="/dashboard/inventory/view"
+            className="block bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
+          >
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-2">
+              See Current Inventory
+            </h2>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Edit and delete inventory items in the system.
+            </p>
+          </Link>
+
         </div>
       </main>
     </div>
