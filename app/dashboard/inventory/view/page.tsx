@@ -92,6 +92,11 @@ const sortProductsByStatus = (products: ProductCard[]) => {
 };
 
 export default function ProductsPage() {
+  const filterSelectClassName =
+    "h-9 w-full rounded-md border border-input bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:bg-zinc-900 dark:text-zinc-100";
+  const filterOptionClassName =
+    "bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100";
+
   const [allProducts, setAllProducts] = useState<ProductCard[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<ProductCard[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -384,8 +389,8 @@ export default function ProductsPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="text-foreground">
+      <div className="mx-auto w-full">
         <h1 className="mb-6 text-center text-3xl font-bold sm:mb-8 sm:text-4xl lg:text-5xl">
           Products
         </h1>
@@ -430,11 +435,13 @@ export default function ProductsPage() {
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange("status", e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={filterSelectClassName}
               >
-                <option value="All">All Statuses</option>
+                <option className={filterOptionClassName} value="All">
+                  All Statuses
+                </option>
                 {filterOptions.statuses.map((status) => (
-                  <option key={status} value={status}>
+                  <option className={filterOptionClassName} key={status} value={status}>
                     {status}
                   </option>
                 ))}
@@ -449,11 +456,13 @@ export default function ProductsPage() {
               <select
                 value={filters.type}
                 onChange={(e) => handleFilterChange("type", e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={filterSelectClassName}
               >
-                <option value="All">All Types</option>
+                <option className={filterOptionClassName} value="All">
+                  All Types
+                </option>
                 {filterOptions.types.map((type) => (
-                  <option key={type} value={type}>
+                  <option className={filterOptionClassName} key={type} value={type}>
                     {type}
                   </option>
                 ))}
@@ -471,13 +480,15 @@ export default function ProductsPage() {
                   onChange={(e) =>
                     handleFilterChange("configuration", e.target.value)
                   }
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className={filterSelectClassName}
                 >
-                  <option value="All">All Configurations</option>
+                  <option className={filterOptionClassName} value="All">
+                    All Configurations
+                  </option>
                   {filterOptions.configurations[
                     filters.type as keyof typeof filterOptions.configurations
                   ]?.map((config) => (
-                    <option key={config} value={config}>
+                    <option className={filterOptionClassName} key={config} value={config}>
                       {config}
                     </option>
                   ))}
@@ -496,11 +507,13 @@ export default function ProductsPage() {
                   onChange={(e) =>
                     handleFilterChange("unitType", e.target.value)
                   }
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className={filterSelectClassName}
                 >
-                  <option value="All">All Units</option>
+                  <option className={filterOptionClassName} value="All">
+                    All Units
+                  </option>
                   {filterOptions.unitTypes.map((unitType) => (
-                    <option key={unitType} value={unitType}>
+                    <option className={filterOptionClassName} key={unitType} value={unitType}>
                       {unitType}
                     </option>
                   ))}
@@ -514,11 +527,13 @@ export default function ProductsPage() {
               <select
                 value={filters.brand}
                 onChange={(e) => handleFilterChange("brand", e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={filterSelectClassName}
               >
-                <option value="All">All Brands</option>
+                <option className={filterOptionClassName} value="All">
+                  All Brands
+                </option>
                 {filterOptions.brands.map((brand) => (
-                  <option key={brand} value={brand}>
+                  <option className={filterOptionClassName} key={brand} value={brand}>
                     {brand}
                   </option>
                 ))}
@@ -533,11 +548,13 @@ export default function ProductsPage() {
                 <select
                   value={filters.fuel}
                   onChange={(e) => handleFilterChange("fuel", e.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className={filterSelectClassName}
                 >
-                  <option value="All">All Fuel Types</option>
+                  <option className={filterOptionClassName} value="All">
+                    All Fuel Types
+                  </option>
                   {filterOptions.fuels.map((f) => (
-                    <option key={f} value={f}>
+                    <option className={filterOptionClassName} key={f} value={f}>
                       {f}
                     </option>
                   ))}
@@ -555,11 +572,13 @@ export default function ProductsPage() {
                 onChange={(e) =>
                   handleFilterChange("priceRange", e.target.value)
                 }
-                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={filterSelectClassName}
               >
-                <option value="All">All Prices</option>
+                <option className={filterOptionClassName} value="All">
+                  All Prices
+                </option>
                 {filterOptions.priceRanges.map((price) => (
-                  <option key={price} value={price}>
+                  <option className={filterOptionClassName} key={price} value={price}>
                     {price}
                   </option>
                 ))}
@@ -654,7 +673,7 @@ export default function ProductsPage() {
                             onClick={() =>
                               setConfirmModal({ type: "sold", product: p })
                             }
-                            className="shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:brightness-110"
+                            className="hover:brightness-110"
                           >
                             <Check className="h-4 w-4" />
                             SOLD
@@ -666,7 +685,7 @@ export default function ProductsPage() {
                             onClick={() => {
                               console.info(`Edit listing requested for ${p.id}`);
                             }}
-                            className="shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary/90 hover:shadow-md"
+                            className="hover:bg-secondary/90"
                           >
                             <Pencil className="h-4 w-4" />
                             Edit
@@ -680,7 +699,7 @@ export default function ProductsPage() {
                           onClick={() =>
                             setConfirmModal({ type: "delete", product: p })
                           }
-                          className="shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-red-700 hover:shadow-md"
+                          className="hover:bg-red-700"
                         >
                           <Trash2 className="h-4 w-4" />
                           Delete
@@ -766,7 +785,7 @@ export default function ProductsPage() {
                     type="button"
                     onClick={handleMarkAsSold}
                     disabled={actionInFlight}
-                    className="shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary/90 hover:shadow-md hover:bg-emerald-700"
+                    className="hover:bg-emerald-700"
                   >
                     {actionInFlight ? "Marking as SOLD..." : "Confirm SOLD"}
                   </Button>
@@ -776,7 +795,7 @@ export default function ProductsPage() {
                     variant="destructive"
                     onClick={handleDelete}
                     disabled={actionInFlight}
-                    className="shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary/90 hover:shadow-md hover:bg-red-700"
+                    className="hover:bg-red-700"
                   >
                     {actionInFlight ? "Deleting..." : "Delete permanently"}
                   </Button>

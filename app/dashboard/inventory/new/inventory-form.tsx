@@ -421,13 +421,15 @@ export default function InventoryForm() {
                     alt={`Preview ${index + 1}`}
                     className="w-20 h-20 object-cover"
                   />
-                  <button
+                  <Button
                     type="button"
                     onClick={() => handleRemoveImage(index)}
-                    className="absolute top-0 right-0 bg-red-500 text-white text-xs p-1 rounded-tl-md hover:bg-red-600"
+                    variant="destructive"
+                    size="sm"
+                    className="absolute right-0 top-0 h-6 rounded-none rounded-bl-md px-2 text-xs"
                   >
                     ×
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
