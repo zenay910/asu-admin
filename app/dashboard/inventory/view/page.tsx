@@ -36,6 +36,7 @@ type ProductCard = {
   name: string;
   price: string; // formatted for UI
   priceNumber: number | null; // raw for filtering
+  status: string;
   condition: string;
   brand: string;
   type: string; // maps from DB `type`
@@ -54,6 +55,7 @@ const filterOptions = {
   },
   unitTypes: ["Individual", "Set"],
   fuels: ["Electric", "Gas"], // NEW
+  statuses: ["Draft", "Published", "Sold"],
   brands: [
     "Samsung",
     "LG",
@@ -75,6 +77,20 @@ const filterOptions = {
   ],
 } as const;
 
+const getStatusRank = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized === "draft") return 0;
+  if (normalized === "published") return 1;
+  if (normalized === "sold") return 2;
+  return 3;
+};
+
+const sortProductsByStatus = (products: ProductCard[]) => {
+  return [...products].sort(
+    (a, b) => getStatusRank(a.status) - getStatusRank(b.status),
+  );
+};
+
 export default function ProductsPage() {
   const [allProducts, setAllProducts] = useState<ProductCard[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<ProductCard[]>([]);
@@ -86,6 +102,7 @@ export default function ProductsPage() {
     product: ProductCard;
   } | null>(null);
   const [filters, setFilters] = useState({
+    status: "All",
     type: "All",
     configuration: "All",
     unitType: "All",
@@ -95,7 +112,7 @@ export default function ProductsPage() {
   });
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  // 1) Fetch Published items with their photos
+  // 1) Fetch items with their photos
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -124,7 +141,6 @@ export default function ProductsPage() {
           )
         `,
         )
-        .eq("status", "Published")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -154,6 +170,7 @@ export default function ProductsPage() {
             `${row.brand ? row.brand + " " : ""}${row.model_number || "Item"}`.trim(),
           price: priceNumber != null ? `$${priceNumber}` : "Call",
           priceNumber,
+          status: row.status ?? "Draft",
           condition: row.condition ?? "Good",
           brand: row.brand ?? "—",
           type: row.type ?? "Other",
@@ -164,8 +181,9 @@ export default function ProductsPage() {
         };
       });
 
-      setAllProducts(mapped);
-      setFilteredProducts(mapped);
+      const sortedMapped = sortProductsByStatus(mapped);
+      setAllProducts(sortedMapped);
+      setFilteredProducts(sortedMapped);
       setLoading(false);
     })();
   }, []);
@@ -182,6 +200,13 @@ export default function ProductsPage() {
 
   const applyFilters = () => {
     let filtered = [...allProducts];
+
+    // Status
+    if (filters.status !== "All") {
+      filtered = filtered.filter(
+        (p) => p.status.toLowerCase() === filters.status.toLowerCase(),
+      );
+    }
 
     // Type
     if (filters.type !== "All") {
@@ -248,12 +273,13 @@ export default function ProductsPage() {
       });
     }
 
-    setFilteredProducts(filtered);
+    setFilteredProducts(sortProductsByStatus(filtered));
     setShowMobileFilters(false);
   };
 
   const clearFilters = () => {
     setFilters({
+      status: "All",
       type: "All",
       configuration: "All",
       unitType: "All",
@@ -261,7 +287,7 @@ export default function ProductsPage() {
       brand: "All",
       priceRange: "All",
     });
-    setFilteredProducts(allProducts);
+    setFilteredProducts(sortProductsByStatus(allProducts));
     setShowMobileFilters(false);
   };
 
@@ -274,6 +300,24 @@ export default function ProductsPage() {
   const removeProductFromState = (productId: string) => {
     setAllProducts((prev) => prev.filter((item) => item.id !== productId));
     setFilteredProducts((prev) => prev.filter((item) => item.id !== productId));
+  };
+
+  const updateProductStatusInState = (productId: string, nextStatus: string) => {
+    setAllProducts((prev) =>
+      sortProductsByStatus(
+        prev.map((item) =>
+          item.id === productId ? { ...item, status: nextStatus } : item,
+        ),
+      ),
+    );
+
+    setFilteredProducts((prev) =>
+      sortProductsByStatus(
+        prev.map((item) =>
+          item.id === productId ? { ...item, status: nextStatus } : item,
+        ),
+      ),
+    );
   };
 
   const handleMarkAsSold = async () => {
@@ -295,7 +339,7 @@ export default function ProductsPage() {
       return;
     }
 
-    removeProductFromState(confirmModal.product.id);
+    updateProductStatusInState(confirmModal.product.id, "Sold");
     setActionInFlight(false);
     setConfirmModal(null);
   };
@@ -329,6 +373,7 @@ export default function ProductsPage() {
     name: "Loading",
     price: "",
     priceNumber: null,
+    status: "",
     condition: "",
     brand: "",
     type: "",
@@ -379,6 +424,23 @@ export default function ProductsPage() {
             Filter Products
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {/* Status Filter */}
+            <div>
+              <label className="mb-2 block text-sm font-medium">Status</label>
+              <select
+                value={filters.status}
+                onChange={(e) => handleFilterChange("status", e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="All">All Statuses</option>
+                {filterOptions.statuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Appliance Type Filter */}
             <div>
               <label className="mb-2 block text-sm font-medium">
@@ -537,6 +599,18 @@ export default function ProductsPage() {
                 className="group overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-ring/40 hover:shadow-md"
               >
                 <div className="relative flex h-64 w-full items-center justify-center overflow-hidden bg-muted sm:h-80">
+                  {!loading && p.status.toLowerCase() !== "published" && (
+                    <span
+                      className={`absolute right-2 top-2 z-10 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm sm:text-xs ${
+                        p.status.toLowerCase() === "sold"
+                          ? "bg-emerald-700 text-white"
+                          : "bg-zinc-700 text-zinc-100"
+                      }`}
+                    >
+                      {p.status}
+                    </span>
+                  )}
+
                   {loading ? (
                     <div className="h-full w-full animate-pulse bg-muted-foreground/10" />
                   ) : p.image ? (
@@ -560,6 +634,7 @@ export default function ProductsPage() {
                           {p.name}
                         </h3>
                         <div className="mb-3 space-y-1 text-xs text-muted-foreground sm:text-sm">
+                          <p>Status: {p.status}</p>
                           <p>Brand: {p.brand}</p>
                           <p>Type: {p.type}</p>
                           <p>Condition: {p.condition}</p>
