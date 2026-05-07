@@ -207,11 +207,11 @@ function buildProductPayload(formInput) {
  * Import one product from form-style input.
  *
  * @param {Object|FormData} formInput - Plain object or FormData containing product fields.
- * @param {Object} options
- * @param {string} [options.bucket]
+ * @param {string} [productIdOverride] - If provided, update existing product instead of creating new
+ * @param {Array<string>} [preUploadedUrls] - Pre-uploaded image URLs to associate with product
  * @returns {Promise<{productId: string, uploadedImages: number}>}
  */
-export async function importProductFromForm(formInput, options = {}) {
+export async function importProductFromForm(formInput, productIdOverride, preUploadedUrls = []) {
   const supabase = await createClient();
 
   const {
@@ -224,23 +224,39 @@ export async function importProductFromForm(formInput, options = {}) {
   }
 
   const payload = buildProductPayload(formInput);
-  const preUploadedImageUrls = getPreUploadedImageUrls(formInput);
+  const preUploadedImageUrls = preUploadedUrls || getPreUploadedImageUrls(formInput);
 
-  const { data: inserted, error: insertError } = await supabase
-    .from('products')
-    .insert(payload)
-    .select('id')
-    .single();
+  let productId = productIdOverride;
+  
+  if (productIdOverride) {
+    // Update existing product
+    const { error: updateError } = await supabase
+      .from('products')
+      .update(payload)
+      .eq('id', productIdOverride);
 
-  if (insertError) {
-    throw new Error(`Product insert failed: ${insertError.message}`);
+    if (updateError) {
+      throw new Error(`Product update failed: ${updateError.message}`);
+    }
+  } else {
+    // Create new product
+    const { data: inserted, error: insertError } = await supabase
+      .from('products')
+      .insert(payload)
+      .select('id')
+      .single();
+
+    if (insertError) {
+      throw new Error(`Product insert failed: ${insertError.message}`);
+    }
+
+    if (!inserted?.id) {
+      throw new Error('Product insert succeeded but no ID was returned.');
+    }
+
+    productId = inserted.id;
   }
 
-  if (!inserted?.id) {
-    throw new Error('Product insert succeeded but no ID was returned.');
-  }
-
-  const productId = inserted.id;
   let uploadedImages = 0;
 
   // Insert pre-uploaded image URLs

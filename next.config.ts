@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
           ]
         : []),
     ],
+    // Disable optimization for Supabase images to avoid private IP issues
+    unoptimized: process.env.NODE_ENV === "development",
   },
 };
 

@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 //import Navbar from "@/components/navbar";
 import Image from "next/image";
 import { Check, Pencil, Trash2 } from "lucide-react";
@@ -92,6 +93,7 @@ const sortProductsByStatus = (products: ProductCard[]) => {
 };
 
 export default function ProductsPage() {
+  const router = useRouter();
   const filterSelectClassName =
     "h-9 w-full rounded-md border border-input bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:bg-zinc-900 dark:text-zinc-100";
   const filterOptionClassName =
@@ -683,7 +685,7 @@ export default function ProductsPage() {
                             size="sm"
                             variant="secondary"
                             onClick={() => {
-                              console.info(`Edit listing requested for ${p.id}`);
+                              router.push(`/dashboard/inventory/edit/${p.id}`);
                             }}
                             className="hover:bg-secondary/90"
                           >
