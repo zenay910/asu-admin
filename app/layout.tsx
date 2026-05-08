@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+// Configure for handling larger payloads (6mb images)
+export const maxDuration = 60;
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],

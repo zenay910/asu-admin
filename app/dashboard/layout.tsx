@@ -6,6 +6,9 @@ import DashboardNavbar from '@/components/dashboard-navbar'
 import { logout } from '@/app/actions'
 import { createClient } from '@/lib/supabase/server'
 
+// Configure body size limit for image uploads via Server Actions
+export const maxDuration = 60
+
 export default async function DashboardLayout({
   children,
 }: {

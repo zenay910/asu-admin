@@ -9,26 +9,57 @@ import { Textarea } from '@/components/ui/textarea'
 import { uploadImages } from '@/lib/supabase/storage'
 import { createInventoryItem } from './actions'
 import { initialInventoryFormState } from './types'
+import { extractApplianceData } from '@/app/extract-appliance-action'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface AiFormValues {
+  title: string
+  brand: string
+  model_number: string
+  type: string
+  configuration: string
+  fuel: string
+  capacity: string
+  color: string
+  age: string
+  dimensions: string
+  features: string
+  description_long: string
+}
+
+const emptyAiValues: AiFormValues = {
+  title: '',
+  brand: '',
+  model_number: '',
+  type: '',
+  configuration: '',
+  fuel: '',
+  capacity: '',
+  color: '',
+  age: '',
+  dimensions: '',
+  features: '',
+  description_long: '',
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
-
   return <p className="text-sm text-red-700 dark:text-red-300">{message}</p>
 }
 
 function handleFieldInvalid(e: React.FormEvent<HTMLInputElement>) {
   const fieldLabel = e.currentTarget.dataset.label || 'this field'
-
   if (e.currentTarget.validity.valueMissing) {
     e.currentTarget.setCustomValidity(`Please enter ${fieldLabel.toLowerCase()}.`)
     return
   }
-
   if (e.currentTarget.validity.badInput) {
     e.currentTarget.setCustomValidity(`Please enter a valid ${fieldLabel.toLowerCase()}.`)
     return
   }
-
   if (e.currentTarget.name === 'price') {
     if (e.currentTarget.validity.rangeUnderflow) {
       e.currentTarget.setCustomValidity('Price must be 0 or greater.')
@@ -39,7 +70,6 @@ function handleFieldInvalid(e: React.FormEvent<HTMLInputElement>) {
       return
     }
   }
-
   e.currentTarget.setCustomValidity('Please check this field and try again.')
 }
 
@@ -47,9 +77,23 @@ function clearFieldValidity(e: React.FormEvent<HTMLInputElement>) {
   e.currentTarget.setCustomValidity('')
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // Strip the data URL prefix, keep only the base64 string
+      resolve(result.split(',')[1])
+    }
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+// ─── Submit Button ────────────────────────────────────────────────────────────
+
 function SubmitButton() {
   const { pending } = useFormStatus()
-
   return (
     <Button type="submit" disabled={pending}>
       {pending ? 'Saving...' : 'Save Item'}
@@ -57,17 +101,100 @@ function SubmitButton() {
   )
 }
 
+// ─── Main Form ────────────────────────────────────────────────────────────────
+
 export default function InventoryForm() {
-  const [state, formAction] = useActionState(
-    createInventoryItem,
-    initialInventoryFormState
-  )
+  const [state, formAction] = useActionState(createInventoryItem, initialInventoryFormState)
+
+  // AI-controlled field values (controlled inputs)
+  const [aiValues, setAiValues] = useState<AiFormValues>(emptyAiValues)
+
+  // Tag scan state
+  const [tagFile, setTagFile] = useState<File | null>(null)
+  const [tagPreview, setTagPreview] = useState<string | null>(null)
+  const [isExtracting, setIsExtracting] = useState(false)
+  const [extractError, setExtractError] = useState<string | null>(null)
+  const [extractSuccess, setExtractSuccess] = useState(false)
+  const tagInputRef = useRef<HTMLInputElement>(null)
+
+  // Existing image upload state
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // ── AI field change helper
+  const setField = (field: keyof AiFormValues) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setAiValues((prev) => ({ ...prev, [field]: e.target.value }))
+
+  // ── Tag scan handler
+  const handleTagSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0] ?? null
+    setTagFile(file)
+    setExtractError(null)
+    setExtractSuccess(false)
+    if (file) {
+      setTagPreview(URL.createObjectURL(file))
+    } else {
+      setTagPreview(null)
+    }
+  }
+
+  const handleExtract = async () => {
+    if (!tagFile) return
+    setIsExtracting(true)
+    setExtractError(null)
+    setExtractSuccess(false)
+
+    try {
+      const base64 = await fileToBase64(tagFile)
+      const mimeType = tagFile.type || 'image/jpeg'
+      const { data, error } = await extractApplianceData(base64, mimeType)
+
+      if (error || !data) {
+        setExtractError(error ?? 'Unknown error. Please fill in the fields manually.')
+        return
+      }
+
+      // Map Gemini JSON → form values
+      setAiValues({
+        title: data.title ?? '',
+        brand: data.brand ?? '',
+        model_number: data.model_number ?? '',
+        type: data.type ?? '',
+        configuration: data.configuration ?? '',
+        fuel: data.fuel ?? '',
+        capacity: data.capacity != null ? String(data.capacity) : '',
+        color: data.color ?? '',
+        age: data.manufacture_year != null ? String(data.manufacture_year) : '',
+        dimensions: data.dimensions
+          ? JSON.stringify(data.dimensions)
+          : '',
+        features: Array.isArray(data.features) ? data.features.join(', ') : '',
+        description_long: data.description_long ?? '',
+      })
+
+      setExtractSuccess(true)
+    } catch (err) {
+      setExtractError(
+        err instanceof Error ? err.message : 'Something went wrong. Please fill in the fields manually.'
+      )
+    } finally {
+      setIsExtracting(false)
+    }
+  }
+
+  const handleClearTag = () => {
+    setTagFile(null)
+    setTagPreview(null)
+    setExtractError(null)
+    setExtractSuccess(false)
+    if (tagInputRef.current) tagInputRef.current.value = ''
+  }
+
+  // ── Existing image upload handlers (unchanged)
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.currentTarget.files || [])
     setImageFiles(files)
@@ -79,19 +206,14 @@ export default function InventoryForm() {
       setUploadError('Please select at least one image')
       return
     }
-
     setIsUploading(true)
     setUploadError(null)
-
     try {
-      // Generate a temporary product ID for storage (will be replaced after form submission)
       const tempProductId = `temp-${Date.now()}`
       const urls = await uploadImages(imageFiles, tempProductId)
       setUploadedImageUrls(urls)
       setImageFiles([])
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
+      if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Failed to upload images')
     } finally {
@@ -103,8 +225,13 @@ export default function InventoryForm() {
     setUploadedImageUrls(uploadedImageUrls.filter((_, i) => i !== index))
   }
 
+  // ── Form submit: inject AI values + image URLs into FormData
   const handleFormAction = async (formData: FormData) => {
-    // Add uploaded image URLs to the form data
+    // Inject AI-controlled fields
+    Object.entries(aiValues).forEach(([key, value]) => {
+      if (value) formData.set(key, value)
+    })
+    // Inject uploaded image URLs
     uploadedImageUrls.forEach((url) => {
       formData.append('imageUrls', url)
     })
@@ -113,24 +240,81 @@ export default function InventoryForm() {
 
   return (
     <form action={handleFormAction} className="space-y-5">
-      {state.error ? (
+      {/* ── Server action errors / success ── */}
+      {state.error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
           {state.error}
         </div>
-      ) : null}
-
-      {uploadError ? (
+      )}
+      {uploadError && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
           {uploadError}
         </div>
-      ) : null}
-
-      {state.success ? (
+      )}
+      {state.success && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300">
           {state.success}
         </div>
-      ) : null}
+      )}
 
+      {/* ── AI Tag Scanner ── */}
+      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+            📷 Scan Appliance Tag
+          </p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            Upload a photo of the appliance model tag to auto-fill the fields below.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 items-center">
+          <Input
+            ref={tagInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleTagSelect}
+            disabled={isExtracting}
+            className="max-w-xs"
+          />
+          <Button
+            type="button"
+            onClick={handleExtract}
+            disabled={!tagFile || isExtracting}
+            variant="secondary"
+          >
+            {isExtracting ? 'Extracting...' : 'Extract Info from Tag'}
+          </Button>
+          {(tagFile || extractSuccess) && (
+            <Button type="button" onClick={handleClearTag} variant="ghost" size="sm">
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {/* Tag image preview */}
+        {tagPreview && (
+          <div className="inline-block rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700">
+            <img src={tagPreview} alt="Tag preview" className="h-32 w-auto object-contain" />
+          </div>
+        )}
+
+        {/* Extraction error */}
+        {extractError && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-300">
+            ⚠️ {extractError}
+          </div>
+        )}
+
+        {/* Extraction success */}
+        {extractSuccess && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300">
+            ✓ Fields filled from tag. Please review and correct anything below before saving.
+          </div>
+        )}
+      </div>
+
+      {/* ── Title ── */}
       <div className="space-y-2">
         <Label htmlFor="title">Title</Label>
         <Input
@@ -139,7 +323,8 @@ export default function InventoryForm() {
           required
           data-label="Title"
           placeholder="e.g. Whirlpool Washer"
-          defaultValue={state.values.title}
+          value={aiValues.title}
+          onChange={setField('title')}
           aria-invalid={Boolean(state.fieldErrors.title)}
           onInvalid={handleFieldInvalid}
           onInput={clearFieldValidity}
@@ -147,6 +332,7 @@ export default function InventoryForm() {
         <FieldError message={state.fieldErrors.title} />
       </div>
 
+      {/* ── Brand / Model Number ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="brand">Brand</Label>
@@ -154,7 +340,8 @@ export default function InventoryForm() {
             id="brand"
             name="brand"
             placeholder="e.g. Whirlpool"
-            defaultValue={state.values.brand}
+            value={aiValues.brand}
+            onChange={setField('brand')}
             aria-invalid={Boolean(state.fieldErrors.brand)}
           />
           <FieldError message={state.fieldErrors.brand} />
@@ -166,13 +353,15 @@ export default function InventoryForm() {
             id="model_number"
             name="model_number"
             placeholder="e.g. WFW5605MW"
-            defaultValue={state.values.model_number}
+            value={aiValues.model_number}
+            onChange={setField('model_number')}
             aria-invalid={Boolean(state.fieldErrors.model_number)}
           />
           <FieldError message={state.fieldErrors.model_number} />
         </div>
       </div>
 
+      {/* ── Type / Configuration ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="type">Type</Label>
@@ -180,7 +369,8 @@ export default function InventoryForm() {
             id="type"
             name="type"
             placeholder="e.g. Washer"
-            defaultValue={state.values.type}
+            value={aiValues.type}
+            onChange={setField('type')}
             aria-invalid={Boolean(state.fieldErrors.type)}
           />
           <FieldError message={state.fieldErrors.type} />
@@ -193,7 +383,8 @@ export default function InventoryForm() {
             name="configuration"
             list="configuration-options"
             placeholder="Front Load"
-            defaultValue={state.values.configuration}
+            value={aiValues.configuration}
+            onChange={setField('configuration')}
             aria-invalid={Boolean(state.fieldErrors.configuration)}
           />
           <FieldError message={state.fieldErrors.configuration} />
@@ -209,9 +400,11 @@ export default function InventoryForm() {
         </div>
       </div>
 
+      {/* ── Unit Type / Fuel ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="unit_type">Unit Type</Label>
+          {/* Not AI-filled — stays uncontrolled */}
           <Input
             id="unit_type"
             name="unit_type"
@@ -234,7 +427,8 @@ export default function InventoryForm() {
             name="fuel"
             list="fuel-options"
             placeholder="Electric"
-            defaultValue={state.values.fuel}
+            value={aiValues.fuel}
+            onChange={setField('fuel')}
             aria-invalid={Boolean(state.fieldErrors.fuel)}
           />
           <FieldError message={state.fieldErrors.fuel} />
@@ -245,9 +439,11 @@ export default function InventoryForm() {
         </div>
       </div>
 
+      {/* ── Condition / Status / Price ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="condition">Condition</Label>
+          {/* Not AI-filled */}
           <Input
             id="condition"
             name="condition"
@@ -266,6 +462,7 @@ export default function InventoryForm() {
 
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
+          {/* Not AI-filled */}
           <Input
             id="status"
             name="status"
@@ -283,6 +480,7 @@ export default function InventoryForm() {
 
         <div className="space-y-2">
           <Label htmlFor="price">Price</Label>
+          {/* Not AI-filled */}
           <Input
             id="price"
             name="price"
@@ -301,6 +499,7 @@ export default function InventoryForm() {
         </div>
       </div>
 
+      {/* ── Color / Capacity / Age ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="color">Color</Label>
@@ -308,7 +507,8 @@ export default function InventoryForm() {
             id="color"
             name="color"
             placeholder="e.g. Stainless Steel"
-            defaultValue={state.values.color}
+            value={aiValues.color}
+            onChange={setField('color')}
             aria-invalid={Boolean(state.fieldErrors.color)}
           />
           <FieldError message={state.fieldErrors.color} />
@@ -323,7 +523,8 @@ export default function InventoryForm() {
             min="0"
             step="0.1"
             placeholder="e.g. 4.5"
-            defaultValue={state.values.capacity}
+            value={aiValues.capacity}
+            onChange={setField('capacity')}
             aria-invalid={Boolean(state.fieldErrors.capacity)}
           />
           <FieldError message={state.fieldErrors.capacity} />
@@ -338,25 +539,29 @@ export default function InventoryForm() {
             min="1900"
             step="1"
             placeholder="e.g. 2020"
-            defaultValue={state.values.age}
+            value={aiValues.age}
+            onChange={setField('age')}
             aria-invalid={Boolean(state.fieldErrors.age)}
           />
           <FieldError message={state.fieldErrors.age} />
         </div>
       </div>
 
+      {/* ── Dimensions ── */}
       <div className="space-y-2">
         <Label htmlFor="dimensions">Dimensions</Label>
         <Input
           id="dimensions"
           name="dimensions"
           placeholder='e.g. 30 x 28 x 66 or {"width_in":30,"depth_in":28,"height_in":66}'
-          defaultValue={state.values.dimensions}
+          value={aiValues.dimensions}
+          onChange={setField('dimensions')}
           aria-invalid={Boolean(state.fieldErrors.dimensions)}
         />
         <FieldError message={state.fieldErrors.dimensions} />
       </div>
 
+      {/* ── Features ── */}
       <div className="space-y-2">
         <Label htmlFor="features">Features</Label>
         <Textarea
@@ -364,12 +569,14 @@ export default function InventoryForm() {
           name="features"
           rows={3}
           placeholder="Comma-separated (e.g. Steam Clean, Smart WiFi, Energy Star)"
-          defaultValue={state.values.features}
+          value={aiValues.features}
+          onChange={setField('features')}
           aria-invalid={Boolean(state.fieldErrors.features)}
         />
         <FieldError message={state.fieldErrors.features} />
       </div>
 
+      {/* ── Description ── */}
       <div className="space-y-2">
         <Label htmlFor="description_long">Description</Label>
         <Textarea
@@ -377,19 +584,20 @@ export default function InventoryForm() {
           name="description_long"
           rows={5}
           placeholder="Detailed product description"
-          defaultValue={state.values.description_long}
+          value={aiValues.description_long}
+          onChange={setField('description_long')}
           aria-invalid={Boolean(state.fieldErrors.description_long)}
         />
         <FieldError message={state.fieldErrors.description_long} />
       </div>
 
+      {/* ── Product Images (unchanged) ── */}
       <div className="space-y-2">
         <Label>Images</Label>
         <div className="flex gap-2">
           <Input
             ref={fileInputRef}
             id="images"
-            name="images"
             type="file"
             accept="image/*"
             multiple
@@ -437,6 +645,7 @@ export default function InventoryForm() {
         )}
       </div>
 
+      {/* ── Submit ── */}
       <div className="flex items-center gap-3 pt-2">
         <SubmitButton />
       </div>
