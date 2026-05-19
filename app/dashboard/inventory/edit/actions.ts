@@ -36,6 +36,8 @@ function extractValues(formData: FormData) {
     values[field] = typeof raw === 'string' ? raw : ''
   }
 
+  console.log('Values: ', values)
+
   return values
 }
 
