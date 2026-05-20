@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Check, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { deleteImagesFromStorage } from "@/lib/supabase/storage";
 //import { toPublicUrl } from "@/lib/storage";
 
 // ---------- Types ----------
@@ -358,6 +359,40 @@ export default function ProductsPage() {
     setActionError(null);
 
     const supabase = createClient();
+
+    const { data: productImages, error: fetchImagesError } = await supabase
+      .from("product_images")
+      .select("photo_url")
+      .eq("product_id", confirmModal.product.id);
+
+    if (fetchImagesError) {
+      console.error("Failed to load product images for deletion:", fetchImagesError);
+      setActionError("Delete failed. This listing was not removed.");
+      setActionInFlight(false);
+      return;
+    }
+
+    try {
+      await deleteImagesFromStorage((productImages || []).map((image) => image.photo_url));
+    } catch (error) {
+      console.error("Failed to delete product images from storage:", error);
+      setActionError("Delete failed. This listing was not removed.");
+      setActionInFlight(false);
+      return;
+    }
+
+    const { error: imageDeleteError } = await supabase
+      .from("product_images")
+      .delete()
+      .eq("product_id", confirmModal.product.id);
+
+    if (imageDeleteError) {
+      console.error("Failed to delete product images:", imageDeleteError);
+      setActionError("Delete failed. This listing was not removed.");
+      setActionInFlight(false);
+      return;
+    }
+
     const { error } = await supabase
       .from("products")
       .delete()

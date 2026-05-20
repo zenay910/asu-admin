@@ -99,6 +99,14 @@ export async function createInventoryItem(
 ): Promise<InventoryFormState> {
   const values = extractValues(formData)
 
+  if (process.env.NODE_ENV !== 'production') {
+    const images = formData.getAll('images')
+    const imageUrls = formData.getAll('imageUrls')
+
+    console.log('[createInventoryItem] images:', images.length)
+    console.log('[createInventoryItem] imageUrls:', imageUrls.length)
+  }
+
   try {
     const { productId, uploadedImages } = await importProductFromForm(formData)
 

@@ -1,15 +1,14 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { uploadImages } from "@/lib/supabase/storage";
 import { createInventoryItem } from "./actions";
 import { initialInventoryFormState } from "./types";
-import { extractApplianceData } from "@/app/extract-appliance-action";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,19 +118,34 @@ export default function InventoryForm() {
   const [aiValues, setAiValues] = useState<AiFormValues>(emptyAiValues);
 
   // Tag scan state
+  const [scanMode, setScanMode] = useState<"image" | "manual">("image");
   const [tagFile, setTagFile] = useState<File | null>(null);
   const [tagPreview, setTagPreview] = useState<string | null>(null);
+  const [manualModelNumber, setManualModelNumber] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractSuccess, setExtractSuccess] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
 
-  // Existing image upload state
+  // Images are submitted with the form and uploaded after the product is created.
   const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const switchToImageMode = () => {
+    setScanMode("image");
+    setManualModelNumber("");
+    setExtractError(null);
+    setExtractSuccess(false);
+  };
+
+  const switchToManualMode = () => {
+    setScanMode("manual");
+    setTagFile(null);
+    setTagPreview(null);
+    if (tagInputRef.current) tagInputRef.current.value = "";
+    setExtractError(null);
+    setExtractSuccess(false);
+  };
 
   // ── AI field change helper
   const setField =
@@ -153,19 +167,33 @@ export default function InventoryForm() {
   };
 
   const handleExtract = async () => {
-    if (!tagFile) return;
+    const trimmedModelNumber = manualModelNumber.trim();
+
+    if (scanMode === "image" && !tagFile) return;
+    if (scanMode === "manual" && !trimmedModelNumber) {
+      setExtractError("Please enter a model number first.");
+      return;
+    }
+
     setIsExtracting(true);
     setExtractError(null);
     setExtractSuccess(false);
 
     try {
-      const base64 = await fileToBase64(tagFile);
+      const payload =
+        scanMode === "image"
+          ? {
+              image: await fileToBase64(tagFile as File),
+              mimeType: tagFile?.type ?? "image/jpeg",
+            }
+          : {
+              modelNumber: trimmedModelNumber,
+            };
 
-      // Call Gemini directly from the browser
       const response = await fetch("/api/extract-appliance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64, mimeType: tagFile.type }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) throw new Error("Extraction failed");
@@ -190,7 +218,7 @@ export default function InventoryForm() {
       });
 
       setExtractSuccess(true);
-    } catch (err) {
+    } catch {
       setExtractError(
         "Could not read tag. Please fill in the fields manually.",
       );
@@ -202,53 +230,37 @@ export default function InventoryForm() {
   const handleClearTag = () => {
     setTagFile(null);
     setTagPreview(null);
+    setManualModelNumber("");
     setExtractError(null);
     setExtractSuccess(false);
     if (tagInputRef.current) tagInputRef.current.value = "";
   };
 
-  // ── Existing image upload handlers (unchanged)
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.currentTarget.files || []);
     setImageFiles(files);
-    setUploadError(null);
   };
 
-  const handleUploadImages = async () => {
-    if (imageFiles.length === 0) {
-      setUploadError("Please select at least one image");
-      return;
-    }
-    setIsUploading(true);
-    setUploadError(null);
-    try {
-      const tempProductId = `temp-${Date.now()}`;
-      const urls = await uploadImages(imageFiles, tempProductId);
-      setUploadedImageUrls(urls);
-      setImageFiles([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (error) {
-      setUploadError(
-        error instanceof Error ? error.message : "Failed to upload images",
-      );
-    } finally {
-      setIsUploading(false);
+  const handleClearImages = () => {
+    setImageFiles([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
-  const handleRemoveImage = (index: number) => {
-    setUploadedImageUrls(uploadedImageUrls.filter((_, i) => i !== index));
-  };
+  useEffect(() => {
+    if (!state.success) return;
+    setImageFiles([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [state.success]);
 
   // ── Form submit: inject AI values + image URLs into FormData
   const handleFormAction = async (formData: FormData) => {
     // Inject AI-controlled fields
     Object.entries(aiValues).forEach(([key, value]) => {
       if (value) formData.set(key, value);
-    });
-    // Inject uploaded image URLs
-    uploadedImageUrls.forEach((url) => {
-      formData.append("imageUrls", url);
     });
     formAction(formData);
   };
@@ -259,11 +271,6 @@ export default function InventoryForm() {
       {state.error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
           {state.error}
-        </div>
-      )}
-      {uploadError && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
-          {uploadError}
         </div>
       )}
       {state.success && (
@@ -279,29 +286,70 @@ export default function InventoryForm() {
             📷 Scan Appliance Tag
           </p>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Upload a photo of the appliance model tag to auto-fill the fields
-            below.
+            Upload a photo of the appliance model tag or type a model number to
+            auto-fill the fields below.
           </p>
         </div>
 
+        <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 p-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+          <button
+            type="button"
+            onClick={switchToImageMode}
+            className={`rounded px-3 py-1.5 transition ${
+              scanMode === "image"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
+                : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            }`}
+          >
+            Photo
+          </button>
+          <button
+            type="button"
+            onClick={switchToManualMode}
+            className={`rounded px-3 py-1.5 transition ${
+              scanMode === "manual"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
+                : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            }`}
+          >
+            Model Number
+          </button>
+        </div>
+
         <div className="flex flex-wrap gap-2 items-center">
-          <Input
-            ref={tagInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleTagSelect}
-            disabled={isExtracting}
-            className="max-w-xs"
-          />
+          {scanMode === "image" ? (
+            <Input
+              ref={tagInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleTagSelect}
+              disabled={isExtracting}
+              className="max-w-xs"
+            />
+          ) : (
+            <Input
+              type="text"
+              value={manualModelNumber}
+              onChange={(e) => setManualModelNumber(e.target.value)}
+              disabled={isExtracting}
+              className="max-w-xs"
+              placeholder="e.g. WFW5605MW"
+            />
+          )}
           <Button
             type="button"
             onClick={handleExtract}
-            disabled={!tagFile || isExtracting}
+            disabled={
+              isExtracting ||
+              (scanMode === "image"
+                ? !tagFile
+                : !manualModelNumber.trim())
+            }
             variant="secondary"
           >
-            {isExtracting ? "Extracting..." : "Extract Info from Tag"}
+            {isExtracting ? "Extracting..." : "Extract Info"}
           </Button>
-          {(tagFile || extractSuccess) && (
+          {(tagFile || manualModelNumber || extractSuccess) && (
             <Button
               type="button"
               onClick={handleClearTag}
@@ -316,9 +364,12 @@ export default function InventoryForm() {
         {/* Tag image preview */}
         {tagPreview && (
           <div className="inline-block rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700">
-            <img
+            <Image
               src={tagPreview}
               alt="Tag preview"
+              width={256}
+              height={128}
+              unoptimized
               className="h-32 w-auto object-contain"
             />
           </div>
@@ -620,50 +671,34 @@ export default function InventoryForm() {
       {/* ── Product Images (unchanged) ── */}
       <div className="space-y-2">
         <Label>Images</Label>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Input
             ref={fileInputRef}
             id="images"
             type="file"
+            name="images"
             accept="image/*"
             multiple
             onChange={handleImageSelect}
-            disabled={isUploading}
           />
-          <Button
-            type="button"
-            onClick={handleUploadImages}
-            disabled={isUploading || imageFiles.length === 0}
-            variant="secondary"
-          >
-            {isUploading ? "Uploading..." : "Upload Images"}
-          </Button>
         </div>
-        {uploadedImageUrls.length > 0 && (
+        {imageFiles.length > 0 && (
           <div className="space-y-2">
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Uploaded images ({uploadedImageUrls.length}):
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Selected images ({imageFiles.length}) will upload when you save.
+              </p>
+              <Button type="button" variant="ghost" size="sm" onClick={handleClearImages}>
+                Clear images
+              </Button>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {uploadedImageUrls.map((url, index) => (
+              {imageFiles.map((file, index) => (
                 <div
-                  key={index}
-                  className="relative inline-block rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700"
+                  key={`${file.name}-${file.size}-${index}`}
+                  className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
                 >
-                  <img
-                    src={url}
-                    alt={`Preview ${index + 1}`}
-                    className="w-20 h-20 object-cover"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => handleRemoveImage(index)}
-                    variant="destructive"
-                    size="sm"
-                    className="absolute right-0 top-0 h-6 rounded-none rounded-bl-md px-2 text-xs"
-                  >
-                    ×
-                  </Button>
+                  <span className="max-w-[16rem] truncate">{file.name}</span>
                 </div>
               ))}
             </div>

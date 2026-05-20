@@ -50,3 +50,36 @@ export async function uploadImages(
 
   return publicUrls
 }
+
+function toStoragePath(publicUrlOrPath: string): string | null {
+  if (!publicUrlOrPath) return null
+
+  try {
+    if (publicUrlOrPath.startsWith('http://') || publicUrlOrPath.startsWith('https://')) {
+      const url = new URL(publicUrlOrPath)
+      const prefix = `/storage/v1/object/public/${BUCKET}/`
+      const index = url.pathname.indexOf(prefix)
+      if (index === -1) return null
+      return decodeURIComponent(url.pathname.slice(index + prefix.length))
+    }
+
+    return publicUrlOrPath.replace(/^\/?/, '')
+  } catch {
+    return null
+  }
+}
+
+export async function deleteImagesFromStorage(publicUrlsOrPaths: string[]): Promise<void> {
+  const supabase = createClient()
+  const paths = publicUrlsOrPaths
+    .map((value) => toStoragePath(value))
+    .filter((value): value is string => Boolean(value))
+
+  if (paths.length === 0) return
+
+  const { error } = await supabase.storage.from(BUCKET).remove(paths)
+
+  if (error) {
+    throw new Error(`Image storage delete failed: ${error.message}`)
+  }
+}

@@ -1,11 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 
-const CONTENT_TYPES = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-};
+const BUCKET = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances';
 
 const ALLOWED = {
   configuration: new Set([
@@ -85,33 +80,13 @@ function validateEnum(name, value) {
   return value;
 }
 
-function extensionFromName(filename) {
-  const parts = String(filename || '').split('.');
-  return parts.length > 1 ? parts.pop().toLowerCase() : '';
-}
-
-function guessType(filename, explicitType) {
-  if (explicitType) return explicitType;
-  const ext = extensionFromName(filename);
-  return CONTENT_TYPES[ext] || 'application/octet-stream';
-}
-
-function sortFilesSmart(files) {
-  return [...files].sort((a, b) => {
-    const aCover = /^1[^0-9]?/.test(a.name) || /cover/i.test(a.name);
-    const bCover = /^1[^0-9]?/.test(b.name) || /cover/i.test(b.name);
-    if (aCover && !bCover) return -1;
-    if (!aCover && bCover) return 1;
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-  });
-}
-
 function isFormData(input) {
+  // Some server environments (or Next.js server actions) pass a FormData-like
+  // object that may not be `instanceof FormData`. Detect by presence of
+  // the `get`/`getAll` methods as a more robust check.
+  if (!input) return false;
+  if (typeof input.getAll === 'function' && typeof input.get === 'function') return true;
   return typeof FormData !== 'undefined' && input instanceof FormData;
-}
-
-function isFileLike(value) {
-  return value instanceof File;
 }
 
 function getField(formInput, key) {
@@ -128,7 +103,39 @@ function getPreUploadedImageUrls(formInput) {
   if (!isFormData(formInput)) {
     return formInput?.imageUrls ? (Array.isArray(formInput.imageUrls) ? formInput.imageUrls : [formInput.imageUrls]) : [];
   }
-  return formInput.getAll('imageUrls').filter((url) => typeof url === 'string' && url.trim());
+  // Try to read multiple possible shapes from FormData-like inputs.
+  try {
+    if (typeof formInput.getAll === 'function') {
+      const all = formInput.getAll('imageUrls');
+      if (Array.isArray(all) && all.length) {
+        return all
+          .map((v) => (typeof v === 'string' ? v : String(v)))
+          .filter((url) => typeof url === 'string' && url.trim());
+      }
+    }
+
+    if (typeof formInput.get === 'function') {
+      const single = formInput.get('imageUrls');
+      if (single != null) {
+        return [typeof single === 'string' ? single : String(single)].filter((u) => u.trim());
+      }
+    }
+
+    // As a last resort, iterate entries to locate any 'imageUrls' keys.
+    if (typeof formInput.entries === 'function') {
+      const found = [];
+      for (const [k, v] of formInput.entries()) {
+        if (k === 'imageUrls') {
+          found.push(typeof v === 'string' ? v : String(v));
+        }
+      }
+      return found.filter((u) => u && u.trim());
+    }
+  } catch {
+    // ignore and fall through to empty
+  }
+
+  return [];
 }
 
 async function collectImages(formInput, explicitImages = []) {
@@ -139,8 +146,11 @@ async function collectImages(formInput, explicitImages = []) {
   }
 
   if (isFormData(formInput)) {
-    const fromForm = formInput.getAll('images').filter(isFileLike).filter((file) => file.size > 0);
+    const fromForm = formInput.getAll('images');
     for (const file of fromForm) {
+      if (!file || typeof file !== 'object' || typeof file.name !== 'string' || typeof file.size !== 'number' || file.size <= 0) {
+        continue;
+      }
       images.push({
         name: file.name,
         contentType: file.type || undefined,
@@ -150,6 +160,27 @@ async function collectImages(formInput, explicitImages = []) {
   }
 
   return images.filter((img) => img?.name && img?.data);
+}
+
+async function uploadImageToStorage(supabase, file, productId, index) {
+  const ext = String(file.name || '').split('.').pop()?.toLowerCase() || 'jpg';
+  const storageName = `${String(index + 1).padStart(3, '0')}.${ext}`;
+  const objectPath = `${productId}/original/${storageName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(objectPath, file.data, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: file.contentType || file.data?.type || 'application/octet-stream',
+    });
+
+  if (uploadError) {
+    throw new Error(`Image upload failed (${file.name}): ${uploadError.message}`);
+  }
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
+  return data.publicUrl;
 }
 
 function buildProductPayload(formInput) {
@@ -225,6 +256,15 @@ export async function importProductFromForm(formInput, productIdOverride, preUpl
 
   const payload = buildProductPayload(formInput);
   const preUploadedImageUrls = preUploadedUrls || getPreUploadedImageUrls(formInput);
+  const imagesToUpload = await collectImages(formInput);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[importProductFromForm] imagesToUpload:', imagesToUpload.length);
+    console.log(
+      '[importProductFromForm] image names:',
+      imagesToUpload.map((image) => image.name),
+    );
+  }
 
   let productId = productIdOverride;
   
@@ -259,11 +299,27 @@ export async function importProductFromForm(formInput, productIdOverride, preUpl
 
   let uploadedImages = 0;
 
+  for (let index = 0; index < imagesToUpload.length; index += 1) {
+    const url = await uploadImageToStorage(supabase, imagesToUpload[index], productId, index);
+
+    const { error: imageRowError } = await supabase
+      .from('product_images')
+      .insert({ product_id: productId, photo_url: url });
+
+    if (imageRowError) {
+      throw new Error(`Image row insert failed: ${imageRowError.message}`);
+    }
+
+    uploadedImages += 1;
+  }
+
   // Insert pre-uploaded image URLs
   for (const url of preUploadedImageUrls) {
     const { error: imageRowError } = await supabase
       .from('product_images')
       .insert({ product_id: productId, photo_url: url });
+
+      console.log('Images: ', photo_url)
 
     if (imageRowError) {
       throw new Error(`Image row insert failed: ${imageRowError.message}`);
