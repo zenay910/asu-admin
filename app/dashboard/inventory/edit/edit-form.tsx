@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useRef, useState, useEffect } from 'react'
+import { useActionState, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -8,9 +8,55 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { uploadImages } from '@/lib/supabase/storage'
-import { updateInventoryItem, fetchProductById } from './actions'
+import { updateInventoryItem } from './actions'
 import { initialInventoryFormState, type InventoryFormValues, type InventoryFormState } from '../new/types'
 import { createClient } from '@/lib/supabase/client'
+
+type InitialProduct = {
+  id: string
+  title: string | null
+  brand: string | null
+  price: number | string | null
+  model_number: string | null
+  condition: string | null
+  status: string | null
+  type: string | null
+  configuration: string | null
+  unit_type: string | null
+  fuel: string | null
+  color: string | null
+  capacity: number | string | null
+  age: number | string | null
+  dimensions: string | null
+  features: string | null
+  description_long: string | null
+  product_images?: Array<{ id: string; photo_url: string }>
+}
+
+function toInitialValues(product?: InitialProduct): InventoryFormValues {
+  if (!product) {
+    return initialInventoryFormState.values
+  }
+
+  return {
+    title: product.title || '',
+    brand: product.brand || '',
+    model_number: product.model_number || '',
+    type: product.type || '',
+    configuration: product.configuration || '',
+    unit_type: product.unit_type || '',
+    fuel: product.fuel || '',
+    condition: product.condition || 'Good',
+    status: product.status || 'Draft',
+    price: product.price?.toString() || '',
+    color: product.color || '',
+    capacity: product.capacity?.toString() || '',
+    age: product.age?.toString() || '',
+    dimensions: product.dimensions || '',
+    features: product.features || '',
+    description_long: product.description_long || '',
+  }
+}
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
@@ -58,111 +104,34 @@ function SubmitButton() {
   )
 }
 
-export default function EditInventoryForm({ productId }: { productId: string }) {
+export default function EditInventoryForm({
+  productId,
+  initialProduct,
+}: {
+  productId: string
+  initialProduct?: InitialProduct
+}) {
   const router = useRouter()
+  const initialValues = toInitialValues(initialProduct)
   const [state, formAction] = useActionState(
     (prevState: InventoryFormState, formData: FormData) => updateInventoryItem(prevState, formData, productId),
-    initialInventoryFormState
+    {
+      ...initialInventoryFormState,
+      values: initialValues,
+    }
   )
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([])
-  const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>([])
+  const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>(
+    () =>
+      initialProduct?.product_images?.map((img) => ({
+        id: img.id,
+        url: img.photo_url,
+      })) ?? []
+  )
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const loadProduct = async () => {
-      try {
-        setLoading(true)
-        const supabase = createClient()
-        
-        const { data, error } = await supabase
-          .from('products')
-          .select(`
-            id,
-            title,
-            brand,
-            price,
-            model_number,
-            condition,
-            status,
-            type,
-            configuration,
-            unit_type,
-            fuel,
-            color,
-            capacity,
-            age,
-            dimensions,
-            features,
-            description_long,
-            product_images (
-              id,
-              photo_url
-            )
-          `)
-          .eq('id', productId)
-          .single()
-
-        if (error) {
-          setLoadError('Failed to load product. Please try again.')
-          console.error('Error loading product:', error)
-          return
-        }
-
-        if (!data) {
-          setLoadError('Product not found.')
-          return
-        }
-
-        // Set existing images
-        const images = data.product_images?.map((img: { id: string; photo_url: string }) => ({
-          id: img.id,
-          url: img.photo_url
-        })) || []
-        setExistingImages(images)
-
-        // Update form state with product data
-        const formValues: InventoryFormValues = {
-          title: data.title || '',
-          brand: data.brand || '',
-          model_number: data.model_number || '',
-          type: data.type || '',
-          configuration: data.configuration || '',
-          unit_type: data.unit_type || '',
-          fuel: data.fuel || '',
-          condition: data.condition || 'Good',
-          status: data.status || 'Draft',
-          price: data.price?.toString() || '',
-          color: data.color || '',
-          capacity: data.capacity?.toString() || '',
-          age: data.age?.toString() || '',
-          dimensions: data.dimensions || '',
-          features: data.features || '',
-          description_long: data.description_long || '',
-        }
-
-        // You would need to create a way to populate the form
-        // For now, we'll store this data and set default values on inputs
-        Object.entries(formValues).forEach(([key, value]) => {
-          const element = document.getElementById(key) as HTMLInputElement | HTMLTextAreaElement
-          if (element) {
-            element.value = value
-          }
-        })
-      } catch (error) {
-        console.error('Error loading product:', error)
-        setLoadError('An error occurred while loading the product.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadProduct()
-  }, [productId])
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.currentTarget.files || [])
@@ -223,29 +192,6 @@ export default function EditInventoryForm({ productId }: { productId: string }) 
       formData.append('imageUrls', url)
     })
     formAction(formData)
-  }
-
-  if (loading) {
-    return (
-      <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-6 text-center dark:border-gray-800 dark:bg-gray-950">
-        <p className="text-sm text-gray-600 dark:text-gray-400">Loading product...</p>
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
-        {loadError}
-        <Button
-          onClick={() => router.back()}
-          className="mt-4"
-          variant="outline"
-        >
-          Go Back
-        </Button>
-      </div>
-    )
   }
 
   return (
