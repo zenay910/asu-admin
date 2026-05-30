@@ -2,11 +2,10 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 //import Navbar from "@/components/navbar";
-import Image from "next/image";
-import { Check, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { deleteImagesFromStorage } from "@/lib/supabase/storage";
+import { InventoryListingCard } from "../../../../components/inventory-listing-card";
 //import { toPublicUrl } from "@/lib/storage";
 
 // ---------- Types ----------
@@ -650,102 +649,23 @@ export default function ProductsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
           {(!loading ? filteredProducts : skeletonProducts).map(
             (p: ProductCard & { id: string }) => (
-              <article
+              <InventoryListingCard
                 key={p.id}
-                className="group overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-ring/40 hover:shadow-md"
-              >
-                <div className="relative flex h-64 w-full items-center justify-center overflow-hidden bg-muted sm:h-80">
-                  {!loading && p.status.toLowerCase() !== "published" && (
-                    <span
-                      className={`absolute right-2 top-2 z-10 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm sm:text-xs ${
-                        p.status.toLowerCase() === "sold"
-                          ? "bg-emerald-700 text-white"
-                          : "bg-zinc-700 text-zinc-100"
-                      }`}
-                    >
-                      {p.status}
-                    </span>
-                  )}
-
-                  {loading ? (
-                    <div className="h-full w-full animate-pulse bg-muted-foreground/10" />
-                  ) : p.image ? (
-                    <Image
-                      src={p.image}
-                      alt={p.name}
-                      fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                      className="object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm text-muted-foreground">
-                      No image
-                    </span>
-                  )}
-
-                  {!loading && (
-                    <div className="absolute inset-0 flex flex-col bg-background/90 p-4 opacity-0 backdrop-blur-sm transition-opacity duration-300 ease-in-out group-hover:opacity-100">
-                      <div className="text-foreground">
-                        <h3 className="mb-2 line-clamp-2 text-base font-semibold sm:text-lg">
-                          {p.name}
-                        </h3>
-                        <div className="mb-3 space-y-1 text-xs text-muted-foreground sm:text-sm">
-                          <p>Status: {p.status}</p>
-                          <p>Brand: {p.brand}</p>
-                          <p>Type: {p.type}</p>
-                          <p>Condition: {p.condition}</p>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg sm:text-xl font-bold">
-                            {p.price}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mt-auto flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="default"
-                            onClick={() =>
-                              setConfirmModal({ type: "sold", product: p })
-                            }
-                            className="hover:brightness-110"
-                          >
-                            <Check className="h-4 w-4" />
-                            SOLD
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => {
-                              router.push(`/dashboard/inventory/edit/${p.id}`);
-                            }}
-                            className="hover:bg-secondary/90"
-                          >
-                            <Pencil className="h-4 w-4" />
-                            Edit
-                          </Button>
-                        </div>
-
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          onClick={() =>
-                            setConfirmModal({ type: "delete", product: p })
-                          }
-                          className="hover:bg-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </article>
+                image={p.image}
+                alt={p.name}
+                title={p.name}
+                price={p.price}
+                status={p.status}
+                brand={p.brand}
+                type={p.type}
+                condition={p.condition}
+                loading={loading}
+                onMarkSold={() => setConfirmModal({ type: "sold", product: p })}
+                onEdit={() => {
+                  router.push(`/dashboard/inventory/edit/${p.id}`);
+                }}
+                onDelete={() => setConfirmModal({ type: "delete", product: p })}
+              />
             ),
           )}
         </div>
