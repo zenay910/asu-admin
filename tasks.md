@@ -43,50 +43,55 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
   **zero** differences (columns, types, defaults, FKs all match live).
 
 ### 0.2 Audit `status` (and other enum) data drift — read-only
-- [ ] Re-run the distinct-value census for `status`, `type`, `condition`, `configuration`,
+- [x] Re-run the distinct-value census for `status`, `type`, `condition`, `configuration`,
   `fuel`, `unit_type` on live `products`; record exact values + counts.
-- [ ] Confirm the full scope of casing/typo drift (currently known: `SOLD` × 5 vs `Sold` × 7).
+- [x] Confirm the full scope of casing/typo drift (currently known: `SOLD` × 5 vs `Sold` × 7).
 - **Verify:** A recorded census table exists; every distinct `status` value is classified as
   either "canonical" or "needs cleanup", with counts that sum to `total_products` (29).
+  → Recorded in `phase-0-enum-census.md`.
 
 ### 0.3 Decide the canonical `status` vocabulary
-- [ ] Ratify the canonical set (proposed: **`Draft`, `Published`, `Sold`, `Archived`** —
+- [x] Ratify the canonical set (proposed: **`Draft`, `Published`, `Sold`, `Archived`** —
   title-case) and map each live variant to its canonical form (`SOLD → Sold`).
 - **Verify:** A written mapping covering **every** value observed in 0.2 is approved by a
   human; no observed value is left unmapped.
+  → Recorded in `phase-0-status-vocabulary.md`. Human approved.
 
 ### 0.4 Clean the live `status` data (idempotent, reversible)
-- [ ] Apply a targeted, idempotent update normalizing casing per 0.3
+- [x] Apply a targeted, idempotent update normalizing casing per 0.3
   (e.g. `update products set status='Sold' where status='SOLD'`), wrapped so re-running is a no-op.
-- [ ] This is a **data** change only — **no schema/constraint change** in this task.
+- [x] This is a **data** change only — **no schema/constraint change** in this task.
 - **Verify:** `select distinct status from products` returns **only** canonical values
   (no `SOLD`); row counts are conserved (still 29 total; `Sold` count = previous `Sold` +
   `SOLD` = 12); the storefront still lists the same `Published` items as before.
+  → `Published` 17 · `Sold` 12 · total 29 · no `SOLD`.
 
 ### 0.5 Align application code expectations (FLAG-ONLY in planning)
-- [ ] Record the required follow-up code reconciliation (do **not** edit code now): the admin
+- [x] Record the required follow-up code reconciliation (do **not** edit code now): the admin
   `form_import.mjs` `ALLOWED.status` set lacks `Sold`, while `asu-frontend` writes `Sold`
   directly — so re-saving a sold unit currently throws `Invalid status`.
 - **Verify:** A tracked code-fix item exists (canonical `status` set shared by both apps),
   explicitly deferred to its own gated task. No code is edited in Phase 0.
+  → `phase-0-code-reconciliation.md` (CR-001, CR-002).
 
 ### 0.6 Legacy RLS — **POLICY-FIRST** remediation (do NOT enable RLS bare)
 > The single biggest "will it break live?" risk. With the storefront on the anon key and no
 > policies, enabling RLS first would return **zero rows → blank storefront**. Policies go on
 > **before** enforcement, with verification between each step.
-- [ ] **Step 1 — Author policies (no enforcement yet):** create policies mirroring intended
+- [x] **Step 1 — Author policies (no enforcement yet):** create policies mirroring intended
   access — `products`: public `SELECT` where `status='Published'`, full access for
   `service_role`/authenticated; `product_images`: public `SELECT` where the parent product is
   `Published`, full access for service/authenticated. (RLS still disabled, so behavior is unchanged.)
-- [ ] **Step 2 — Verify against the anon key (RLS still OFF):** confirm the intended policy
+- [x] **Step 2 — Verify against the anon key (RLS still OFF):** confirm the intended policy
   predicates return exactly the rows the storefront expects.
-- [ ] **Step 3 — Enable RLS** on `products` then `product_images`.
-- [ ] **Step 4 — Re-verify the live storefront** end-to-end with the anon key.
+- [x] **Step 3 — Enable RLS** on `products` then `product_images`.
+- [x] **Step 4 — Re-verify the live storefront** end-to-end with the anon key.
 - **Verify:** After Step 3, with the **anon key**: `products` returns only `Published` rows and
   `product_images` returns only images of `Published` products; authenticated/service context
   still sees everything; the `asu-frontend` products page renders the **same** published
   inventory as before enabling RLS (no blank screen, identical count). `pg_policies` lists the
   new policies and `rls_enabled = true` on both tables.
+  → anon: 17 products / 50 images · authenticated: 29 · service_role: 29 · RLS on both tables · 6 policies.
 
 > ✅ **Phase 0 exit gate:** 0.1–0.6 complete and human-verified. Only now may Phases A–D run.
 > Tasks that depend on clean data / source-of-record are explicitly marked **(requires Phase 0)** below.
