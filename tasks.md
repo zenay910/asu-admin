@@ -34,10 +34,10 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
 > `Published` (17) / `Sold` (7) / `SOLD` (5); live-only `products.age numeric` column.
 
 ### 0.1 Capture a baseline migration (source-of-record)
-- [ ] Without changing the schema, record the **current live schema** as the first tracked
+- [x] Without changing the schema, record the **current live schema** as the first tracked
   migration and update the stale committed DDL so it reflects reality — specifically add the
   live-only **`age numeric` (nullable)** column to `create_products.sql`.
-- [ ] Do **not** alter live tables in this task; it only establishes a faithful source-of-record.
+- [x] Do **not** alter live tables in this task; it only establishes a faithful source-of-record.
 - **Verify:** The committed `products` DDL lists `age numeric`; a diff of the committed schema
   against `list_tables`/`information_schema.columns` for `products` + `product_images` shows
   **zero** differences (columns, types, defaults, FKs all match live).

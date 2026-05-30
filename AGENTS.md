@@ -165,3 +165,11 @@ violation regardless of outcome.
 - `npm run lint` passes in the affected repo; no type errors introduced.
 - The task's `Verify` metric is demonstrably met, with evidence stated.
 - Execution model has **stopped** and requested human verification before continuing.
+
+---
+
+## Output Formatting & Token Management
+- **Crush Verbosity:** Do not write conversational summaries, explanations, or recaps after completing a task. 
+- **Code-First Responses:** When a task is complete, display ONLY the code diff or file structural changes. 
+- **Strict Brevity:** Limit prose to a maximum of 2 sentences. If the verification step passes, state only the verification output and ask for the next task.
+- **Do Not Hallucinate Progress:** Never tell the human what the next phase is unless explicitly asked. Stop immediately upon task execution.
