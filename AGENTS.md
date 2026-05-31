@@ -106,7 +106,7 @@ even if it "works".
   > no policies, that returns zero rows and blanks the storefront. Legacy RLS is remediated
   > **policy-first** (create + verify policies, then enable RLS) as its own human-gated task.
 - All schema changes are written as **idempotent, reviewable SQL DDL** committed to the repo
-  (mirror `asu-frontend/supabase_postgresql/*.sql`) and applied via tracked migrations.
+  (committed to `supabase_postgresql/*.sql` in this repo) and applied via tracked migrations.
   > Live note: the database currently has **no migration history** and the committed DDL is
   > stale (e.g. it omits the live `products.age numeric` column). Going forward, schema
   > changes are tracked migrations — never applied only through the dashboard with no

@@ -104,13 +104,14 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
 > `product_images`, guaranteeing the live storefront and admin keep working.
 
 ### A1. `appliances` table DDL
-- [ ] Create idempotent `create_appliances.sql` per `project.md` §3.1, including
+- [x] Create idempotent `create_appliances.sql` per `project.md` §3.1, including
   `lifecycle_state text not null default 'Intake'` and the existing inventory columns
   (title, brand, model_number, type, configuration, unit_type, fuel, color, capacity,
   dimensions jsonb, features jsonb, condition, price, status, description_long, **age numeric**,
   created_at, updated_at). PK `id uuid default gen_random_uuid()`.
 - **Verify:** Running on a clean DB creates `appliances`; re-running is a no-op (idempotent);
   an empty `select` returns 0 rows with all columns/types confirmed via `information_schema.columns`.
+  → 20 columns · 0 rows · re-run success.
 
 ### A2. Lifecycle & enum CHECK constraints on `appliances` **(requires Phase 0)**
 - [ ] Add `check` constraints: `lifecycle_state IN ('Intake','Refurbishment','Listed','Retired')`,

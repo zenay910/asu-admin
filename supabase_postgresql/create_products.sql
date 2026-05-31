@@ -1,0 +1,23 @@
+create table public.products (
+  created_at timestamp with time zone not null default now(),
+  title text not null default ''::text,
+  brand text not null default ''::text,
+  price numeric not null,
+  model_number text not null default ''::text,
+  type text null,
+  configuration text null,
+  dimensions jsonb null,
+  capacity numeric null,
+  fuel text null,
+  unit_type text null,
+  color text null,
+  features json null,
+  condition text null,
+  status text null,
+  description_long text null,
+  age numeric null,
+  updated_at timestamp with time zone null default now(),
+  id uuid not null default gen_random_uuid (),
+  constraint products_pkey primary key (id),
+  constraint products_id_key unique (id)
+) TABLESPACE pg_default;
