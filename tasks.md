@@ -114,59 +114,66 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
   → 20 columns · 0 rows · re-run success.
 
 ### A2. Lifecycle & enum CHECK constraints on `appliances` **(requires Phase 0)**
-- [ ] Add `check` constraints: `lifecycle_state IN ('Intake','Refurbishment','Listed','Retired')`,
+- [x] Add `check` constraints: `lifecycle_state IN ('Intake','Refurbishment','Listed','Retired')`,
   `condition IN ('New','Good','Fair','Poor')`, **`status IN ('Draft','Published','Sold','Archived')`
   (the canonical set ratified in 0.3)**, and `configuration`/`unit_type`/`fuel` matching the
   `ALLOWED` sets in `form_import.mjs`.
-- [ ] Add invariant guard: `status='Published'` only when `lifecycle_state='Listed'` (table `check`).
+- [x] Add invariant guard: `status='Published'` only when `lifecycle_state='Listed'` (table `check`).
 - **Verify:** Inserting an invalid `lifecycle_state`, a non-canonical `status` (e.g. `SOLD`), or
   `status='Published'` with `lifecycle_state<>'Listed'` is **rejected**; a valid row
   (`lifecycle_state='Listed'`, `status='Published'`) inserts. (Depends on 0.3/0.4 so the
   canonical set is authoritative.)
+  → 3 rejects (23514) · valid insert OK · test row deleted.
 
 ### A3. `appliance_images` table DDL
-- [ ] Create `create_appliance_images.sql` per `project.md` §3.2: `id`, `created_at`,
+- [x] Create `create_appliance_images.sql` per `project.md` §3.2: `id`, `created_at`,
   `appliance_id uuid NOT NULL → appliances(id) ON DELETE CASCADE`, `photo_url text not null`,
   `sort_order int default 0`. **Deliberately fixes the legacy footgun** (no nullable FK, no
   `gen_random_uuid()` default on the FK).
 - **Verify:** Insert referencing a real appliance succeeds; a non-existent `appliance_id` is
   rejected by the FK; a NULL `appliance_id` is rejected by NOT NULL; deleting the parent
   cascades (child count = 0).
+  → valid insert OK · FK 23503 · NOT NULL 23502 · cascade delete verified (0 child rows).
 
 ### A4. `parts` table DDL
-- [ ] Create `create_parts.sql` per `project.md` §3.3: `part_number` (unique, not null),
+- [x] Create `create_parts.sql` per `project.md` §3.3: `part_number` (unique, not null),
   `name` (not null), `quantity_on_hand int not null default 0 check (>= 0)`,
   `reorder_threshold`, `location`, `unit_cost`, `unit_price`,
   `status default 'Active' check (status IN ('Active','Discontinued'))`, timestamps.
 - **Verify:** Creates idempotently; duplicate `part_number` rejected (unique); negative
   `quantity_on_hand` rejected (check); a valid part inserts and is selectable.
+  → re-run OK · duplicate 23505 · negative qty 23514 · valid insert/select OK · 0 rows after cleanup.
 
 ### A5. `part_compatibility` table DDL
-- [ ] Create `create_part_compatibility.sql` per `project.md` §3.4: `part_id → parts(id) on
+- [x] Create `create_part_compatibility.sql` per `project.md` §3.4: `part_id → parts(id) on
   delete cascade`, `appliance_id → appliances(id) on delete cascade`, `notes`, `created_at`,
   unique `(part_id, appliance_id)`.
 - **Verify:** A valid link inserts; a duplicate pair is rejected; deleting either parent
   removes the link (cascade confirmed).
+  → valid link OK · duplicate 23505 · delete part → 0 links · cleanup done.
 
 ### A6. `appliance_state_history` audit table DDL
-- [ ] Create `create_appliance_state_history.sql`: `id`, `appliance_id → appliances(id) on
+- [x] Create `create_appliance_state_history.sql`: `id`, `appliance_id → appliances(id) on
   delete cascade`, `from_state text`, `to_state text not null`, `changed_by uuid`,
   `reason text`, `created_at timestamptz default now()`.
 - **Verify:** Inserting a transition record succeeds and is queryable ordered by `created_at`;
   FK rejects unknown `appliance_id`.
+  → 2 rows ordered by `created_at` · bad FK 23503 · cleanup done (0 history rows).
 
 ### A7. `updated_at` maintenance
-- [ ] Add a shared `set_updated_at()` function + `before update` triggers on `appliances` and
+- [x] Add a shared `set_updated_at()` function + `before update` triggers on `appliances` and
   `parts` (idempotent create-or-replace).
 - **Verify:** Updating a row on these tables advances `updated_at` past `created_at` without
   the app setting it explicitly.
+  → `appliances` + `parts` both `updated_at > created_at` after update · cleanup done.
 
 ### A8. Indexes for query paths
-- [ ] Add indexes: `appliances(status)`, `appliances(lifecycle_state)`, `parts(category)`,
+- [x] Add indexes: `appliances(status)`, `appliances(lifecycle_state)`, `parts(category)`,
   `part_compatibility(appliance_id)`, `part_compatibility(part_id)`,
   `appliance_images(appliance_id)`.
 - **Verify:** Indexes exist (`pg_indexes`); `EXPLAIN` on a `status`/`lifecycle_state` filter and
   on a compatibility lookup shows index usage (not a full seq scan on seeded data).
+  → 6/6 indexes in `pg_indexes` · Index Scan on `appliances_status_idx`, `appliances_lifecycle_state_idx`, `part_compatibility_appliance_id_idx` (seeded data) · cleanup done.
 
 ---
 

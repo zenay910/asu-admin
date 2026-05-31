@@ -1,0 +1,20 @@
+create table if not exists public.parts (
+  id uuid not null default gen_random_uuid(),
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone null default now(),
+  part_number text not null,
+  name text not null,
+  description text null,
+  brand text null,
+  category text null,
+  quantity_on_hand int not null default 0,
+  reorder_threshold int null default 0,
+  location text null,
+  unit_cost numeric null,
+  unit_price numeric null,
+  status text not null default 'Active',
+  constraint parts_pkey primary key (id),
+  constraint parts_part_number_key unique (part_number),
+  constraint parts_quantity_on_hand_check check (quantity_on_hand >= 0),
+  constraint parts_status_check check (status in ('Active', 'Discontinued'))
+) tablespace pg_default;

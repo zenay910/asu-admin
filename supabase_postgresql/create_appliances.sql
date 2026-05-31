@@ -20,5 +20,25 @@ create table if not exists public.appliances (
   description_long text null,
   age numeric null,
   constraint appliances_pkey primary key (id),
-  constraint appliances_id_key unique (id)
+  constraint appliances_id_key unique (id),
+  constraint appliances_lifecycle_state_check
+    check (lifecycle_state in ('Intake', 'Refurbishment', 'Listed', 'Retired')),
+  constraint appliances_condition_check
+    check (condition is null or condition in ('New', 'Good', 'Fair', 'Poor')),
+  constraint appliances_status_check
+    check (status is null or status in ('Draft', 'Published', 'Sold', 'Archived')),
+  constraint appliances_configuration_check
+    check (
+      configuration is null
+      or configuration in (
+        'Front Load', 'Top Load', 'Stacked Unit', 'Standard',
+        'Slide-In', 'Glass Cooktop', 'Coil Cooktop'
+      )
+    ),
+  constraint appliances_unit_type_check
+    check (unit_type is null or unit_type in ('Individual', 'Set')),
+  constraint appliances_fuel_check
+    check (fuel is null or fuel in ('Electric', 'Gas', '')),
+  constraint appliances_published_requires_listed_check
+    check (status is distinct from 'Published' or lifecycle_state = 'Listed')
 ) tablespace pg_default;
