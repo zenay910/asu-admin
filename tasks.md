@@ -286,17 +286,21 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
 > `products`/`product_images` remain intact until both apps cut over (separate, later task).
 
 ### D1. Backfill dry-run (read-only)
-- [ ] Produce a non-writing mapping of every `products` row to an `appliances` row (incl. `age`,
+- [x] Produce a non-writing mapping of every `products` row to an `appliances` row (incl. `age`,
   `features` json→jsonb cast, canonical `status`, derived initial `lifecycle_state`).
 - **Verify:** The dry-run reports 29 source rows mapped, **zero** rows that would violate any
   A2 CHECK (proving 0.4 cleanup worked), and a deterministic `lifecycle_state` for each row.
+  → `lib/migration/products-to-appliances.ts` · `supabase_postgresql/d1_products_to_appliances_dry_run.sql` ·
+  `phase-d1-backfill-dry-run.md` · live: 29 mapped · 0 A2 violations · Listed×17 · Retired×12 · `tsc` OK.
 
 ### D2. Execute idempotent backfill
-- [ ] Insert mapped rows into `appliances` (and images into `appliance_images`) idempotently
+- [x] Insert mapped rows into `appliances` (and images into `appliance_images`) idempotently
   (safe to re-run; keyed to avoid duplicates).
 - **Verify:** `appliances` count = `products` count (29); `appliance_images` count =
   `product_images` count (84); re-running inserts 0 additional rows; spot-checked rows match
   source field-for-field; no CHECK/RLS errors.
+  → `migrations/20260529200000_d2_backfill_products_to_appliances.sql` applied · 29/84 counts ·
+  re-run 0 inserts · 0 field mismatches · `phase-d2-backfill-execute.md`.
 
 ---
 
