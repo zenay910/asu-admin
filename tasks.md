@@ -183,22 +183,25 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
 > handled, policy-first, in **Phase 0.6**.)
 
 ### B1. RLS on `appliances`
-- [ ] Enable RLS. Public/anon read **only** where `status='Published'`. Authenticated/service:
+- [x] Enable RLS. Public/anon read **only** where `status='Published'`. Authenticated/service:
   full access.
 - **Verify:** Anon key returns only `Published` appliances (0 non-published); authenticated/
   service sees all; anon `insert`/`update` denied.
+  → RLS on · 3 policies · anon 1 published / 0 non-published · auth+service 2 · anon insert 42501 · anon update 0 rows.
 
 ### B2. RLS on `appliance_images`
-- [ ] Enable RLS. Public read only for images whose parent appliance is `Published` (EXISTS
+- [x] Enable RLS. Public read only for images whose parent appliance is `Published` (EXISTS
   subquery). Authenticated/service: full access.
 - **Verify:** Anon can read images of a `Published` appliance and **cannot** read images of a
   non-published one; anon writes denied.
+  → RLS on · 3 policies · anon 1 image · auth 2 · anon insert 42501 · cleanup done.
 
 ### B3. RLS on `parts`, `part_compatibility`, `appliance_state_history`
-- [ ] Enable RLS on all three. **No anon access** (internal-only): read/write restricted to
+- [x] Enable RLS on all three. **No anon access** (internal-only): read/write restricted to
   authenticated/service role.
 - **Verify:** Anon `select` on each returns 0 rows / permission denied; authenticated context
   can read/write; policies confirmed via `pg_policies`.
+  → RLS on all 3 · 6 policies (2/table) · anon 0/0/0 · auth 1/1/1 + write OK · cleanup done.
 
 ---
 
