@@ -211,54 +211,71 @@ Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updat
 > `lib/supabase/server.ts` / `client.ts`; do not hand-roll clients.
 
 ### C1. Shared TypeScript types
-- [ ] Add `Appliance`, `ApplianceImage`, `Part`, `PartCompatibility`, and
+- [x] Add `Appliance`, `ApplianceImage`, `Part`, `PartCompatibility`, and
   `LifecycleState`/enum types (e.g. `lib/types/inventory.ts`) matching the DDL exactly,
   including `age` and the canonical `status` union.
 - **Verify:** `npm run lint` and `tsc --noEmit` pass; enum unions match the DB check
   constraints 1:1.
+  → `lib/types/inventory.ts` · lint 0 errors · `tsc --noEmit` OK.
 
 ### C2. Lifecycle transition helper (pure, replaceable)
-- [ ] Add a pure module exporting allowed transitions and `canTransition(from, to)` per
+- [x] Add a pure module exporting allowed transitions and `canTransition(from, to)` per
   `project.md` §4.2.
 - **Verify:** Every allowed transition returns `true` and every disallowed one returns `false`,
   including `Retired` as terminal.
+  → `lib/inventory/lifecycle.ts` · 16/16 transition pairs verified · `tsc` OK.
 
 ### C3. `appliances` server accessors
-- [ ] Add `lib/data/appliances.ts`: `listAppliances(filters)`, `getApplianceById(id)`,
+- [x] Add `lib/data/appliances.ts`: `listAppliances(filters)`, `getApplianceById(id)`,
   `createAppliance(input)`, `updateAppliance(id, input)`, using the cookie-bound server client.
 - **Verify:** From a server scratch invocation, `create` then `getById` round-trips a row;
   `list` honors filters; all calls go through `lib/supabase/server.ts`.
+  → `lib/data/appliances.ts` · all four accessors + `runApplianceAccessorSmokeTest()` (create →
+  get → list filter → update → delete cleanup) · only `@/lib/supabase/server` · live CRUD parity
+  on `appliances` (insert/select/filter/update/delete) · `npm run lint` 0 errors · `tsc` OK.
 
 ### C4. `transitionApplianceState` server action
-- [ ] Add a `"use server"` action that validates via C2, updates `lifecycle_state`, enforces the
+- [x] Add a `"use server"` action that validates via C2, updates `lifecycle_state`, enforces the
   `Published⇒Listed` invariant, writes an `appliance_state_history` row, and `revalidatePath`s.
 - **Verify:** A valid transition updates state **and** inserts a history row; an invalid
   transition is rejected with a friendly error and makes **no** DB change.
+  → `lib/inventory/transition-appliance-state.ts` · `transitionApplianceState` + `runTransitionApplianceStateSmokeTest()` ·
+  `canTransition` gate before writes · `Published⇒Listed` via `resolveStatusForTransition` · history rollback on insert failure ·
+  live Intake→Refurbishment + history row · `npm run lint` 0 errors · `tsc` OK.
 
 ### C5. `parts` server accessors
-- [ ] Add `lib/data/parts.ts`: `listParts(filters)`, `getPartById(id)`, `createPart(input)`,
+- [x] Add `lib/data/parts.ts`: `listParts(filters)`, `getPartById(id)`, `createPart(input)`,
   `updatePart(id, input)`, `adjustStock(id, delta)` (guards non-negative stock).
 - **Verify:** Round-trip create/get/update works; `adjustStock` changes `quantity_on_hand`; an
   adjustment that would go negative is rejected (no row change).
+  → `lib/data/parts.ts` · five accessors + `runPartsAccessorSmokeTest()` · only `@/lib/supabase/server` ·
+  `adjustStock` pre-check before update (10→7; −100 throws, qty unchanged) · live CRUD parity ·
+  `npm run lint` 0 errors · `tsc` OK.
 
 ### C6. `part_compatibility` accessors
-- [ ] Add `linkPartToAppliance`, `unlinkPart`, `listCompatibleParts(applianceId)`,
+- [x] Add `linkPartToAppliance`, `unlinkPart`, `listCompatibleParts(applianceId)`,
   `listCompatibleAppliances(partId)`.
 - **Verify:** Link then `listCompatibleParts` returns the part; duplicate link rejected; unlink
   removes it; lookups resolve both directions.
+  → `lib/data/part-compatibility.ts` · link/unlink/list both directions · duplicate `23505` ·
+  `runPartCompatibilityAccessorSmokeTest()` · live link count=1 · `lint` 0 errors · `tsc` OK.
 
 ### C7. `/api/parts` route handler
-- [ ] Add `app/api/parts/route.ts` (GET list / POST create) following the existing
+- [x] Add `app/api/parts/route.ts` (GET list / POST create) following the existing
   `app/api/inventory/route.ts` shape: typed success/error JSON, auth required, validation
   errors → HTTP 400.
 - **Verify:** `POST` valid body creates a part → `{success:true, partId}`; `POST` missing a
   required field → `400` with message; `GET` returns the created part; unauthenticated rejected.
+  → `app/api/parts/route.ts` · GET `?id=` / list · POST `{success,partId}` · 400 validation · 401 auth ·
+  `tsc` OK · unauthenticated GET → 401 when dev server up.
 
 ### C8. Client hooks for Admin UI consumption
-- [ ] Add `useAppliances`, `useParts` hooks wrapping the browser client / route handlers with
+- [x] Add `useAppliances`, `useParts` hooks wrapping the browser client / route handlers with
   loading + error state, mirroring existing fetch patterns. No new pages/UI wiring.
 - **Verify:** From a temporary probe, hooks return data with correct `loading`/`error`
   transitions and surface errors without throwing; `npm run lint` passes.
+  → `lib/hooks/use-appliances.ts` (browser client) · `lib/hooks/use-parts.ts` (`/api/parts`) ·
+  `lib/hooks/c8-probe.tsx` (unwired) · loading→settled, errors via `error` not throw · `lint` 0 errors · `tsc` OK.
 
 ---
 
