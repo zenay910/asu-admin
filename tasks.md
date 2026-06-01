@@ -1,316 +1,362 @@
-# tasks.md — Wave 1: Advanced Inventory & Parts
+# tasks.md — Wave 2: Standardized Operations Forms & Invoicing
 
-Itemized, **one-task-at-a-time** checklist for **Wave 1 only** (see `ROADMAP.md`).
+Itemized, **one-task-at-a-time** checklist for **Wave 2 only** (see `ROADMAP.md`).
+
+**Goal:** Capture the operational work performed on appliances (jobs/work orders with
+standardized intake/diagnostic/repair forms), distinguish **internal refurbishment** work
+from **customer-facing billable services**, draw down `parts` stock auditably, and turn work
+**and sales** into billable invoices. Wave 2 supports three invoice sources: a **job**
+(service labor + parts), an **appliance sale** (appliance + delivery/installation fees +
+accessories + tax), and a **retail** counter sale (parts only).
 
 **Order of execution (hard requirement):**
-**Phase 0 (Reconciliation Prerequisites) → Phase A (new-table DDL) → Phase B (RLS on new
-tables) → Phase C (backend accessors/hooks/APIs) → Phase D (gated data migration).**
+**Phase A (new-table DDL) → Phase B (RLS on new tables) → Phase C (backend
+accessors/hooks/APIs).**
 
-> ### 🚦 Phase 0 is a BLOCKING SAFETY GATE
-> Phase 0 reconciles the live database with our plans. **No CHECK constraint that touches
-> `status`, and no `products → appliances` backfill, may run until every Phase 0 task is
-> complete and human-verified.** This sequencing exists because the live DB (1) has **RLS
-> disabled with no policies** on `products`/`product_images`, and (2) holds **dirty `status`
-> data** (`SOLD` vs `Sold`) that would violate any naive constraint or corrupt a backfill.
+> Wave 2 needs **no Phase 0**: the live database is clean and reconciled (Wave 1 exit),
+> RLS + tracked migrations are in place, and all new work is **strictly additive** (new
+> tables only). `products` / `product_images` / `appliances` reads are never altered, so the
+> storefront and existing Admin flows keep working throughout.
 
 **Execution rules (from `AGENTS.md`):**
 - Do **one** task at a time, touching only the files that task requires.
 - A task is done only when its **`Verify`** metric is objectively met.
 - After each task, **STOP and request human verification** before starting the next.
-- Schema changes are idempotent SQL DDL committed to the repo and applied via **tracked
-  migrations** (the live DB currently has none).
-- **No application code edits or live migrations are executed during planning.** When a task
-  reaches execution, it still respects the additive, non-breaking doctrine.
+- Schema changes are idempotent SQL DDL committed to the repo under
+  `supabase_postgresql/migrations/<YYYYMMDDHHMMSS>_<name>.sql` and applied via **tracked
+  migrations**.
+- Mirror the established Wave 1 patterns: internal-only RLS
+  (`...130200_internal_tables_rls.sql`), accessors (`lib/data/parts.ts`), the state-machine
+  helper + server action (`lib/inventory/lifecycle.ts`,
+  `lib/inventory/transition-appliance-state.ts`), and route handlers (`app/api/parts/route.ts`).
 
 Conventions: `uuid` PKs (`gen_random_uuid()`), `timestamptz` `created_at`/`updated_at`,
 `numeric` money, RLS on every new table. Admin writes only; storefront read-only.
 
 ---
 
-## Phase 0 — Reconciliation Prerequisites (MANDATORY · BLOCKING)
+## Confirmed scope decisions (ratified during planning)
 
-> Verified live baseline (2026-05-29): `products` (29 rows), `product_images` (84 rows); RLS
-> **off**, **0** policies, **0** CHECK constraints, **0** tracked migrations; `status` =
-> `Published` (17) / `Sold` (7) / `SOLD` (5); live-only `products.age numeric` column.
+### Jobs are two-dimensional: internal work vs. customer-facing services
+A job shares one lifecycle (`Open → In Progress → Completed → Closed`) but has two contexts:
 
-### 0.1 Capture a baseline migration (source-of-record)
-- [x] Without changing the schema, record the **current live schema** as the first tracked
-  migration and update the stale committed DDL so it reflects reality — specifically add the
-  live-only **`age numeric` (nullable)** column to `create_products.sql`.
-- [x] Do **not** alter live tables in this task; it only establishes a faithful source-of-record.
-- **Verify:** The committed `products` DDL lists `age numeric`; a diff of the committed schema
-  against `list_tables`/`information_schema.columns` for `products` + `product_images` shows
-  **zero** differences (columns, types, defaults, FKs all match live).
+| | **Internal** (refurbishment) | **Customer** (billable service) |
+|---|---|---|
+| Purpose | Prep our inventory for sale | Service performed for a customer |
+| `appliance_id` | **required** (our `appliances` unit) | optional (customer's unit / none) |
+| `job_type` | Intake, Diagnostic, Repair, Cleaning | Diagnostic, Repair, Delivery, Installation, Maintenance, Warranty |
+| Invoiceable? | No (internal cost only) | Yes (`generateInvoiceForJob`) |
+| Drives appliance lifecycle? | Yes (Intake→Refurbishment→Listed) | No |
 
-### 0.2 Audit `status` (and other enum) data drift — read-only
-- [x] Re-run the distinct-value census for `status`, `type`, `condition`, `configuration`,
-  `fuel`, `unit_type` on live `products`; record exact values + counts.
-- [x] Confirm the full scope of casing/typo drift (currently known: `SOLD` × 5 vs `Sold` × 7).
-- **Verify:** A recorded census table exists; every distinct `status` value is classified as
-  either "canonical" or "needs cleanup", with counts that sum to `total_products` (29).
-  → Recorded in `phase-0-enum-census.md`.
+- `jobs.job_class text` CHECK `in ('Internal','Customer')`.
+- `jobs.appliance_id` is **nullable**; a table CHECK requires it non-null when
+  `job_class='Internal'`.
+- `jobs.job_type` CHECK enforces the full union
+  `('Intake','Diagnostic','Repair','Cleaning','Delivery','Installation','Maintenance','Warranty')`;
+  the valid **class↔type pairing** is enforced in the backend (`job-lifecycle.ts`).
 
-### 0.3 Decide the canonical `status` vocabulary
-- [x] Ratify the canonical set (proposed: **`Draft`, `Published`, `Sold`, `Archived`** —
-  title-case) and map each live variant to its canonical form (`SOLD → Sold`).
-- **Verify:** A written mapping covering **every** value observed in 0.2 is approved by a
-  human; no observed value is left unmapped.
-  → Recorded in `phase-0-status-vocabulary.md`. Human approved.
+### Invoices are source-agnostic (not strictly job-derived)
+- `invoices.job_id` is **nullable**; `invoices.invoice_type text` CHECK
+  `in ('job','appliance_sale','retail')`.
+- `invoices.appliance_id uuid null → appliances(id)` (for appliance sales).
+- `invoices.customer_id uuid null` — **no FK** in Wave 2 (`customers` is Wave 3; FK added then).
+- `invoice_line_items.kind` CHECK `in ('labor','part','appliance','fee')` — delivery,
+  installation and misc charges are `fee` lines; accessories (hoses, vents) are `part` lines.
+- Line items carry optional nullable `part_id` / `appliance_id` traceability columns.
+- **Sequential invoice number:** `invoices.invoice_number` is unique and human-readable
+  (`INV-000123`), backed by a Postgres sequence — in addition to the `uuid` PK.
 
-### 0.4 Clean the live `status` data (idempotent, reversible)
-- [x] Apply a targeted, idempotent update normalizing casing per 0.3
-  (e.g. `update products set status='Sold' where status='SOLD'`), wrapped so re-running is a no-op.
-- [x] This is a **data** change only — **no schema/constraint change** in this task.
-- **Verify:** `select distinct status from products` returns **only** canonical values
-  (no `SOLD`); row counts are conserved (still 29 total; `Sold` count = previous `Sold` +
-  `SOLD` = 12); the storefront still lists the same `Published` items as before.
-  → `Published` 17 · `Sold` 12 · total 29 · no `SOLD`.
+### Cross-feature behavior
+- **Appliance-sale invoices** drive the sold appliance to `Retired` (`status='Sold'`) via the
+  existing `transitionApplianceState`, so it leaves the storefront.
+- **Retail parts sales** draw down `parts.quantity_on_hand` and write a `part_stock_movements`
+  row (no `job_part`), reusing the same audited stock path as job consumption.
 
-### 0.5 Align application code expectations (FLAG-ONLY in planning)
-- [x] Record the required follow-up code reconciliation (do **not** edit code now): the admin
-  `form_import.mjs` `ALLOWED.status` set lacks `Sold`, while `asu-frontend` writes `Sold`
-  directly — so re-saving a sold unit currently throws `Invalid status`.
-- **Verify:** A tracked code-fix item exists (canonical `status` set shared by both apps),
-  explicitly deferred to its own gated task. No code is edited in Phase 0.
-  → `phase-0-code-reconciliation.md` (CR-001, CR-002).
+### `on delete` policy
+Financial/work history uses `restrict` (`jobs.appliance_id`, `job_parts.part_id`,
+`invoices.job_id`, `invoices.appliance_id`, `part_stock_movements.part_id`); owned children
+use `cascade` (`job_state_history`, `job_parts` by job, `invoice_line_items`); line-item
+traceability FKs use `set null` so a financial document survives later catalog cleanup.
 
-### 0.6 Legacy RLS — **POLICY-FIRST** remediation (do NOT enable RLS bare)
-> The single biggest "will it break live?" risk. With the storefront on the anon key and no
-> policies, enabling RLS first would return **zero rows → blank storefront**. Policies go on
-> **before** enforcement, with verification between each step.
-- [x] **Step 1 — Author policies (no enforcement yet):** create policies mirroring intended
-  access — `products`: public `SELECT` where `status='Published'`, full access for
-  `service_role`/authenticated; `product_images`: public `SELECT` where the parent product is
-  `Published`, full access for service/authenticated. (RLS still disabled, so behavior is unchanged.)
-- [x] **Step 2 — Verify against the anon key (RLS still OFF):** confirm the intended policy
-  predicates return exactly the rows the storefront expects.
-- [x] **Step 3 — Enable RLS** on `products` then `product_images`.
-- [x] **Step 4 — Re-verify the live storefront** end-to-end with the anon key.
-- **Verify:** After Step 3, with the **anon key**: `products` returns only `Published` rows and
-  `product_images` returns only images of `Published` products; authenticated/service context
-  still sees everything; the `asu-frontend` products page renders the **same** published
-  inventory as before enabling RLS (no blank screen, identical count). `pg_policies` lists the
-  new policies and `rls_enabled = true` on both tables.
-  → anon: 17 products / 50 images · authenticated: 29 · service_role: 29 · RLS on both tables · 6 policies.
+### Job state machine (defined in `lib/operations/job-lifecycle.ts`)
+```
+Open ──▶ In Progress ──▶ Completed ──▶ Closed
+  │            │             │
+  └─ Closed ◀──┴─────────────┘   (close-early allowed from any non-terminal state)
+```
+- Allowed: `Open → {In Progress, Closed}`, `In Progress → {Completed, Closed}`,
+  `Completed → {Closed}`, `Closed → {}` (terminal).
 
-> ✅ **Phase 0 exit gate:** 0.1–0.6 complete and human-verified. Only now may Phases A–D run.
-> Tasks that depend on clean data / source-of-record are explicitly marked **(requires Phase 0)** below.
+### Data flow added by Wave 2
+```
+appliances 1──* jobs 1──* job_parts *──1 parts
+     │            │                         │
+     │            ├──* job_state_history     └──* part_stock_movements (audit; job OR retail)
+     │            └──1 invoices (type=job)
+     │
+     └──1 invoices (type=appliance_sale) ─┐
+   (retail) invoices (type=retail) ───────┴──* invoice_line_items (labor|part|appliance|fee)
+```
 
 ---
 
 ## Phase A — New-Table Database Setup (DDL)
 
-> Strictly **additive**: creates new tables only. Does **not** alter `products` /
-> `product_images`, guaranteeing the live storefront and admin keep working.
+> Strictly **additive**: creates new tables/sequences/triggers/indexes only. Does **not**
+> alter `products` / `product_images` / `appliances`, guaranteeing the live storefront and
+> existing Admin flows keep working.
 
-### A1. `appliances` table DDL
-- [x] Create idempotent `create_appliances.sql` per `project.md` §3.1, including
-  `lifecycle_state text not null default 'Intake'` and the existing inventory columns
-  (title, brand, model_number, type, configuration, unit_type, fuel, color, capacity,
-  dimensions jsonb, features jsonb, condition, price, status, description_long, **age numeric**,
-  created_at, updated_at). PK `id uuid default gen_random_uuid()`.
-- **Verify:** Running on a clean DB creates `appliances`; re-running is a no-op (idempotent);
-  an empty `select` returns 0 rows with all columns/types confirmed via `information_schema.columns`.
-  → 20 columns · 0 rows · re-run success.
+### A1. `jobs` table DDL
+- [x] Create idempotent `create_jobs.sql` migration per `project.md` §3.6 (extended):
+  `id uuid pk default gen_random_uuid()`, `appliance_id uuid null → appliances(id) on delete
+  restrict`, `customer_id uuid null` (**no FK — added in Wave 3**), `job_class text not null`,
+  `job_type text not null`, `state text not null default 'Open'`, `summary text`,
+  `details jsonb` (standardized form payload), `labor_cost numeric not null default 0`,
+  `created_at`/`updated_at timestamptz`.
+- **Verify:** Running on a clean DB creates `jobs`; re-running is a no-op (idempotent); an
+  insert referencing a real appliance succeeds; a non-existent `appliance_id` is rejected by
+  the FK (`23503`); a row with `appliance_id` NULL inserts (constrained in A2); all
+  columns/types confirmed via `information_schema.columns`.
 
-### A2. Lifecycle & enum CHECK constraints on `appliances` **(requires Phase 0)**
-- [x] Add `check` constraints: `lifecycle_state IN ('Intake','Refurbishment','Listed','Retired')`,
-  `condition IN ('New','Good','Fair','Poor')`, **`status IN ('Draft','Published','Sold','Archived')`
-  (the canonical set ratified in 0.3)**, and `configuration`/`unit_type`/`fuel` matching the
-  `ALLOWED` sets in `form_import.mjs`.
-- [x] Add invariant guard: `status='Published'` only when `lifecycle_state='Listed'` (table `check`).
-- **Verify:** Inserting an invalid `lifecycle_state`, a non-canonical `status` (e.g. `SOLD`), or
-  `status='Published'` with `lifecycle_state<>'Listed'` is **rejected**; a valid row
-  (`lifecycle_state='Listed'`, `status='Published'`) inserts. (Depends on 0.3/0.4 so the
-  canonical set is authoritative.)
-  → 3 rejects (23514) · valid insert OK · test row deleted.
+### A2. `jobs` CHECK constraints
+- [x] Add `check` constraints: `job_class in ('Internal','Customer')`;
+  `state in ('Open','In Progress','Completed','Closed')`;
+  `job_type in ('Intake','Diagnostic','Repair','Cleaning','Delivery','Installation','Maintenance','Warranty')`;
+  `labor_cost >= 0`; and a class-targeting table check **`job_class <> 'Internal' or
+  appliance_id is not null`** (Internal jobs must reference an inventory appliance).
+- **Verify:** Inserting an invalid `job_class`, invalid `state`, invalid `job_type`, negative
+  `labor_cost`, or an `Internal` job with NULL `appliance_id` is **rejected** (`23514`); a
+  valid `Internal` job (with appliance) and a valid `Customer` job (appliance NULL) both insert.
 
-### A3. `appliance_images` table DDL
-- [x] Create `create_appliance_images.sql` per `project.md` §3.2: `id`, `created_at`,
-  `appliance_id uuid NOT NULL → appliances(id) ON DELETE CASCADE`, `photo_url text not null`,
-  `sort_order int default 0`. **Deliberately fixes the legacy footgun** (no nullable FK, no
-  `gen_random_uuid()` default on the FK).
-- **Verify:** Insert referencing a real appliance succeeds; a non-existent `appliance_id` is
-  rejected by the FK; a NULL `appliance_id` is rejected by NOT NULL; deleting the parent
-  cascades (child count = 0).
-  → valid insert OK · FK 23503 · NOT NULL 23502 · cascade delete verified (0 child rows).
+### A3. `job_state_history` audit table DDL
+- [x] Create `create_job_state_history.sql`: `id`, `job_id → jobs(id) on delete cascade`,
+  `from_state text`, `to_state text not null`, `changed_by uuid`, `reason text`,
+  `created_at timestamptz default now()`. Mirrors `appliance_state_history`.
+- **Verify:** A transition record inserts and is queryable ordered by `created_at`; an unknown
+  `job_id` is rejected by the FK (`23503`); deleting the parent job cascades child rows to 0.
 
-### A4. `parts` table DDL
-- [x] Create `create_parts.sql` per `project.md` §3.3: `part_number` (unique, not null),
-  `name` (not null), `quantity_on_hand int not null default 0 check (>= 0)`,
-  `reorder_threshold`, `location`, `unit_cost`, `unit_price`,
-  `status default 'Active' check (status IN ('Active','Discontinued'))`, timestamps.
-- **Verify:** Creates idempotently; duplicate `part_number` rejected (unique); negative
-  `quantity_on_hand` rejected (check); a valid part inserts and is selectable.
-  → re-run OK · duplicate 23505 · negative qty 23514 · valid insert/select OK · 0 rows after cleanup.
+### A4. `job_parts` table DDL
+- [x] Create `create_job_parts.sql` per `project.md` §3.7: `id`, `job_id → jobs(id) on delete
+  cascade`, `part_id → parts(id) on delete restrict`, `quantity int not null check (> 0)`,
+  `unit_price numeric not null` (snapshot at consumption), `created_at`.
+- **Verify:** A valid row inserts; `quantity <= 0` is rejected (`23514`); deleting a part that
+  is referenced by a job is rejected (`23503`, restrict); deleting the parent job cascades
+  child rows to 0.
 
-### A5. `part_compatibility` table DDL
-- [x] Create `create_part_compatibility.sql` per `project.md` §3.4: `part_id → parts(id) on
-  delete cascade`, `appliance_id → appliances(id) on delete cascade`, `notes`, `created_at`,
-  unique `(part_id, appliance_id)`.
-- **Verify:** A valid link inserts; a duplicate pair is rejected; deleting either parent
-  removes the link (cascade confirmed).
-  → valid link OK · duplicate 23505 · delete part → 0 links · cleanup done.
+### A5. `part_stock_movements` audit table DDL
+- [x] Create `create_part_stock_movements.sql`: `id`, `part_id → parts(id) on delete
+  restrict`, `job_part_id uuid null → job_parts(id) on delete set null`, `delta int not null`,
+  `quantity_after int not null`, `reason text`, `changed_by uuid`, `created_at`. Supports both
+  job consumption (`job_part_id` set) and retail sales (`job_part_id` NULL).
+- **Verify:** A movement row inserts with and without `job_part_id`; a bad `part_id` is
+  rejected (`23503`); deleting the source `job_part` sets `job_part_id` to NULL (the movement
+  row is preserved for audit).
 
-### A6. `appliance_state_history` audit table DDL
-- [x] Create `create_appliance_state_history.sql`: `id`, `appliance_id → appliances(id) on
-  delete cascade`, `from_state text`, `to_state text not null`, `changed_by uuid`,
-  `reason text`, `created_at timestamptz default now()`.
-- **Verify:** Inserting a transition record succeeds and is queryable ordered by `created_at`;
-  FK rejects unknown `appliance_id`.
-  → 2 rows ordered by `created_at` · bad FK 23503 · cleanup done (0 history rows).
+### A6. `invoice_number` sequence + `invoices` table DDL
+- [x] Create `create_invoices.sql`: a sequence `invoice_number_seq`, then `invoices` per
+  `project.md` §3.8 (extended): `id uuid pk`, `invoice_number text not null unique default
+  ('INV-' || lpad(nextval('invoice_number_seq')::text, 6, '0'))`, `invoice_type text not null
+  default 'job'`, `job_id uuid null → jobs(id) on delete restrict`, `appliance_id uuid null →
+  appliances(id) on delete restrict`, `customer_id uuid null` (**no FK — added in Wave 3**),
+  `status text not null default 'Draft'`, `subtotal numeric not null default 0`, `tax numeric
+  not null default 0`, `total numeric not null default 0`, `issued_at timestamptz null`,
+  `created_at`/`updated_at`.
+- **Verify:** Two inserts receive distinct, sequential `invoice_number`s; a duplicate explicit
+  `invoice_number` is rejected (`23505`); a bad `job_id`/`appliance_id` is rejected (`23503`);
+  re-running the migration is idempotent.
 
-### A7. `updated_at` maintenance
-- [x] Add a shared `set_updated_at()` function + `before update` triggers on `appliances` and
-  `parts` (idempotent create-or-replace).
-- **Verify:** Updating a row on these tables advances `updated_at` past `created_at` without
-  the app setting it explicitly.
-  → `appliances` + `parts` both `updated_at > created_at` after update · cleanup done.
+### A7. `invoices` type/status & source-consistency CHECK constraints
+- [x] Add `check` constraints: `invoice_type in ('job','appliance_sale','retail')`;
+  `status in ('Draft','Issued','Paid','Void')`; non-negative `subtotal`/`tax`/`total`; and a
+  source-consistency check — `invoice_type='job'` ⇒ `job_id is not null`;
+  `invoice_type='appliance_sale'` ⇒ `appliance_id is not null`; `invoice_type='retail'` ⇒
+  `job_id is null`.
+- **Verify:** A `job` invoice with NULL `job_id`, an `appliance_sale` with NULL `appliance_id`,
+  a `retail` with a non-null `job_id`, an invalid `status`, and any negative total are each
+  rejected (`23514`); one valid invoice of each type inserts.
 
-### A8. Indexes for query paths
-- [x] Add indexes: `appliances(status)`, `appliances(lifecycle_state)`, `parts(category)`,
-  `part_compatibility(appliance_id)`, `part_compatibility(part_id)`,
-  `appliance_images(appliance_id)`.
-- **Verify:** Indexes exist (`pg_indexes`); `EXPLAIN` on a `status`/`lifecycle_state` filter and
-  on a compatibility lookup shows index usage (not a full seq scan on seeded data).
-  → 6/6 indexes in `pg_indexes` · Index Scan on `appliances_status_idx`, `appliances_lifecycle_state_idx`, `part_compatibility_appliance_id_idx` (seeded data) · cleanup done.
+### A8. `invoice_line_items` table DDL
+- [x] Create `create_invoice_line_items.sql` per `project.md` §3.8 (extended): `id`,
+  `invoice_id → invoices(id) on delete cascade`, `kind text check (kind in
+  ('labor','part','appliance','fee'))`, `part_id uuid null → parts(id) on delete set null`,
+  `appliance_id uuid null → appliances(id) on delete set null`, `description text`,
+  `quantity numeric not null default 1`, `unit_price numeric not null default 0`,
+  `line_total numeric not null default 0`, `created_at`.
+- **Verify:** A line of each `kind` inserts; an invalid `kind` is rejected (`23514`); deleting
+  the parent invoice cascades line items to 0; deleting a referenced part/appliance sets the
+  traceability column to NULL (line preserved).
+
+### A9. `updated_at` maintenance
+- [x] Attach the existing shared `set_updated_at()` `before update` trigger to `jobs` and
+  `invoices` (idempotent create).
+- **Verify:** Updating a row on `jobs` and on `invoices` advances `updated_at` past
+  `created_at` without the app setting it explicitly.
+
+### A10. Indexes for query paths
+- [x] Add indexes: `jobs(appliance_id)`, `jobs(state)`, `jobs(job_class)`,
+  `job_parts(job_id)`, `job_parts(part_id)`, `part_stock_movements(part_id)`,
+  `invoices(job_id)`, `invoices(appliance_id)`, `invoices(invoice_type)`, `invoices(status)`,
+  `invoice_line_items(invoice_id)`.
+- **Verify:** All indexes exist (`pg_indexes`); `EXPLAIN` on a `jobs.state` filter and on a
+  `job_parts(job_id)` lookup shows Index Scan (not a full seq scan) on seeded data.
 
 ---
 
 ## Phase B — RLS on New Tables (must precede any consumption)
 
-> New tables ship RLS + policies together, from creation. (Legacy-table RLS was already
-> handled, policy-first, in **Phase 0.6**.)
+> New tables ship RLS + policies together, from creation. Every Wave 2 table is
+> **internal-only** (operations + financial data): authenticated + service_role full access,
+> **no anon access**. Follows the `...130200_internal_tables_rls.sql` pattern.
 
-### B1. RLS on `appliances`
-- [x] Enable RLS. Public/anon read **only** where `status='Published'`. Authenticated/service:
-  full access.
-- **Verify:** Anon key returns only `Published` appliances (0 non-published); authenticated/
-  service sees all; anon `insert`/`update` denied.
-  → RLS on · 3 policies · anon 1 published / 0 non-published · auth+service 2 · anon insert 42501 · anon update 0 rows.
-
-### B2. RLS on `appliance_images`
-- [x] Enable RLS. Public read only for images whose parent appliance is `Published` (EXISTS
-  subquery). Authenticated/service: full access.
-- **Verify:** Anon can read images of a `Published` appliance and **cannot** read images of a
-  non-published one; anon writes denied.
-  → RLS on · 3 policies · anon 1 image · auth 2 · anon insert 42501 · cleanup done.
-
-### B3. RLS on `parts`, `part_compatibility`, `appliance_state_history`
-- [x] Enable RLS on all three. **No anon access** (internal-only): read/write restricted to
-  authenticated/service role.
+### B1. RLS on `jobs` + `job_state_history`
+- [ ] Enable RLS on both. Authenticated + service_role full access; **no anon**.
 - **Verify:** Anon `select` on each returns 0 rows / permission denied; authenticated context
-  can read/write; policies confirmed via `pg_policies`.
-  → RLS on all 3 · 6 policies (2/table) · anon 0/0/0 · auth 1/1/1 + write OK · cleanup done.
+  can read/write both; `pg_policies` lists the policies and `rls_enabled = true` on both tables.
+
+### B2. RLS on `job_parts` + `part_stock_movements`
+- [ ] Enable RLS on both with the same internal-only pattern.
+- **Verify:** Anon `select` on each returns 0 / permission denied; authenticated context can
+  read/write both; policies confirmed via `pg_policies`.
+
+### B3. RLS on `invoices` + `invoice_line_items`
+- [ ] Enable RLS on both with the same internal-only pattern (financial data — never anon).
+- **Verify:** Anon `select` on each returns 0 / permission denied; authenticated context can
+  read/write both; policies confirmed via `pg_policies`.
 
 ---
 
 ## Phase C — Backend Accessors, Hooks & APIs (Admin App)
 
-> Typed data-access layer first, then route handlers. UI deferred. Reuse
-> `lib/supabase/server.ts` / `client.ts`; do not hand-roll clients.
+> Typed data-access layer first, then state-machine/actions, then route handlers, then hooks.
+> No new pages/UI wiring. Reuse `lib/supabase/server.ts` / `client.ts`; do not hand-roll clients.
 
 ### C1. Shared TypeScript types
-- [x] Add `Appliance`, `ApplianceImage`, `Part`, `PartCompatibility`, and
-  `LifecycleState`/enum types (e.g. `lib/types/inventory.ts`) matching the DDL exactly,
-  including `age` and the canonical `status` union.
-- **Verify:** `npm run lint` and `tsc --noEmit` pass; enum unions match the DB check
-  constraints 1:1.
-  → `lib/types/inventory.ts` · lint 0 errors · `tsc --noEmit` OK.
+- [ ] Add `lib/types/operations.ts` with `Job`, `JobClass`, `JobState`, `JobType`,
+  `JobStateHistory`, `JobPart`, `PartStockMovement`, `Invoice`, `InvoiceType`,
+  `InvoiceStatus`, `InvoiceLineItem`, `LineItemKind`, matching the DDL/check constraints
+  exactly (incl. nullable `appliance_id`/`job_id` and the traceability columns).
+- **Verify:** `npm run lint` and `tsc --noEmit` pass; every enum union matches its DB check
+  constraint 1:1.
 
-### C2. Lifecycle transition helper (pure, replaceable)
-- [x] Add a pure module exporting allowed transitions and `canTransition(from, to)` per
-  `project.md` §4.2.
-- **Verify:** Every allowed transition returns `true` and every disallowed one returns `false`,
-  including `Retired` as terminal.
-  → `lib/inventory/lifecycle.ts` · 16/16 transition pairs verified · `tsc` OK.
+### C2. Job state machine + type taxonomy helper (pure, replaceable)
+- [ ] Add `lib/operations/job-lifecycle.ts` exporting `ALLOWED_JOB_TRANSITIONS`,
+  `getAllowedJobTransitions(from)`, `canTransitionJob(from, to)`, plus `JOB_TYPES_BY_CLASS`
+  and `isValidJobTypeForClass(jobClass, jobType)` (Internal: Intake/Diagnostic/Repair/Cleaning;
+  Customer: Diagnostic/Repair/Delivery/Installation/Maintenance/Warranty).
+- **Verify:** Every allowed transition returns `true` and every disallowed one returns
+  `false` (`Closed` terminal); `isValidJobTypeForClass` accepts each valid class↔type pair and
+  rejects cross-class pairs (e.g. `Internal`+`Delivery` → `false`); `tsc` OK.
 
-### C3. `appliances` server accessors
-- [x] Add `lib/data/appliances.ts`: `listAppliances(filters)`, `getApplianceById(id)`,
-  `createAppliance(input)`, `updateAppliance(id, input)`, using the cookie-bound server client.
-- **Verify:** From a server scratch invocation, `create` then `getById` round-trips a row;
-  `list` honors filters; all calls go through `lib/supabase/server.ts`.
-  → `lib/data/appliances.ts` · all four accessors + `runApplianceAccessorSmokeTest()` (create →
-  get → list filter → update → delete cleanup) · only `@/lib/supabase/server` · live CRUD parity
-  on `appliances` (insert/select/filter/update/delete) · `npm run lint` 0 errors · `tsc` OK.
+### C3. `jobs` server accessors
+- [ ] Add `lib/data/jobs.ts`: `listJobs(filters)` (incl. `job_class`/`state`/`job_type`),
+  `getJobById(id)`, `createJob(input)`, `updateJob(id, input)`, using the cookie-bound server
+  client; validate class↔type via C2 and the Internal⇒appliance_id rule; include
+  `runJobsAccessorSmokeTest()`.
+- **Verify:** From a server scratch invocation, `create` then `getById` round-trips both an
+  Internal and a Customer job; an invalid class↔type pair and an Internal job without an
+  appliance are rejected before insert; `list` honors filters; all calls go through
+  `@/lib/supabase/server`; `npm run lint` and `tsc` pass.
 
-### C4. `transitionApplianceState` server action
-- [x] Add a `"use server"` action that validates via C2, updates `lifecycle_state`, enforces the
-  `Published⇒Listed` invariant, writes an `appliance_state_history` row, and `revalidatePath`s.
-- **Verify:** A valid transition updates state **and** inserts a history row; an invalid
+### C4. `transitionJobState` server action
+- [ ] Add `lib/operations/transition-job-state.ts` (`"use server"`): auth gate, validate via
+  C2, update `state`, write a `job_state_history` row (rollback on insert failure), and
+  `revalidatePath`.
+- **Verify:** A valid transition updates `state` **and** inserts one history row; an invalid
   transition is rejected with a friendly error and makes **no** DB change.
-  → `lib/inventory/transition-appliance-state.ts` · `transitionApplianceState` + `runTransitionApplianceStateSmokeTest()` ·
-  `canTransition` gate before writes · `Published⇒Listed` via `resolveStatusForTransition` · history rollback on insert failure ·
-  live Intake→Refurbishment + history row · `npm run lint` 0 errors · `tsc` OK.
 
-### C5. `parts` server accessors
-- [x] Add `lib/data/parts.ts`: `listParts(filters)`, `getPartById(id)`, `createPart(input)`,
-  `updatePart(id, input)`, `adjustStock(id, delta)` (guards non-negative stock).
-- **Verify:** Round-trip create/get/update works; `adjustStock` changes `quantity_on_hand`; an
-  adjustment that would go negative is rejected (no row change).
-  → `lib/data/parts.ts` · five accessors + `runPartsAccessorSmokeTest()` · only `@/lib/supabase/server` ·
-  `adjustStock` pre-check before update (10→7; −100 throws, qty unchanged) · live CRUD parity ·
-  `npm run lint` 0 errors · `tsc` OK.
+### C5. `consumePartsForJob` server action (job stock drawdown + audit)
+- [ ] Add `lib/operations/consume-parts.ts` (`"use server"`): insert `job_parts` row(s)
+  snapshotting `parts.unit_price`, decrement `parts.quantity_on_hand` (reuse/guard the
+  non-negative `adjustStock` rule), and write a `part_stock_movements` row (with `job_part_id`)
+  per consumption.
+- **Verify:** Consuming N units inserts a `job_parts` row, reduces `quantity_on_hand` by N,
+  and inserts a movement whose `quantity_after` matches the new stock; a consumption exceeding
+  available stock is **rejected** with **no** `job_parts`, movement, or stock change.
 
-### C6. `part_compatibility` accessors
-- [x] Add `linkPartToAppliance`, `unlinkPart`, `listCompatibleParts(applianceId)`,
-  `listCompatibleAppliances(partId)`.
-- **Verify:** Link then `listCompatibleParts` returns the part; duplicate link rejected; unlink
-  removes it; lookups resolve both directions.
-  → `lib/data/part-compatibility.ts` · link/unlink/list both directions · duplicate `23505` ·
-  `runPartCompatibilityAccessorSmokeTest()` · live link count=1 · `lint` 0 errors · `tsc` OK.
+### C6. Generalized stock-movement helper (retail/non-job path)
+- [ ] Add a reusable stock drawdown in the parts layer (e.g. `recordStockMovement(partId,
+  delta, { reason, jobPartId? , changedBy })`) that decrements `parts.quantity_on_hand` and
+  writes a `part_stock_movements` row, usable when there is **no** job (retail sales). C5 may
+  be refactored to call it.
+- **Verify:** A non-job drawdown of N units reduces `quantity_on_hand` by N and writes one
+  movement with `job_part_id` NULL and correct `quantity_after`; an over-draw is rejected with
+  no stock/movement change.
 
-### C7. `/api/parts` route handler
-- [x] Add `app/api/parts/route.ts` (GET list / POST create) following the existing
-  `app/api/inventory/route.ts` shape: typed success/error JSON, auth required, validation
-  errors → HTTP 400.
-- **Verify:** `POST` valid body creates a part → `{success:true, partId}`; `POST` missing a
-  required field → `400` with message; `GET` returns the created part; unauthenticated rejected.
-  → `app/api/parts/route.ts` · GET `?id=` / list · POST `{success,partId}` · 400 validation · 401 auth ·
-  `tsc` OK · unauthenticated GET → 401 when dev server up.
+### C7. `invoices` accessors + total recompute
+- [ ] Add `lib/data/invoices.ts`: `listInvoices(filters)` (incl. `invoice_type`/`status`),
+  `getInvoiceById(id)` (with line items), `createInvoice(input)`, `addLineItem(invoiceId,
+  input)` (computes `line_total = quantity * unit_price`), and `recomputeInvoiceTotals(id)`
+  (sum line items → `subtotal`, apply `tax` → `total`).
+- **Verify:** Adding mixed-`kind` line items then calling `recomputeInvoiceTotals` yields
+  `subtotal = Σ line_total` and `total = subtotal + tax`; round-trip create/get works for each
+  `invoice_type`.
 
-### C8. Client hooks for Admin UI consumption
-- [x] Add `useAppliances`, `useParts` hooks wrapping the browser client / route handlers with
-  loading + error state, mirroring existing fetch patterns. No new pages/UI wiring.
-- **Verify:** From a temporary probe, hooks return data with correct `loading`/`error`
+### C8. `generateInvoiceForJob` server action (Customer jobs)
+- [ ] Add `lib/operations/generate-invoice-for-job.ts` (`"use server"`): only for
+  `job_class='Customer'` jobs in `Completed`/`Closed`; create a `job` invoice with one `labor`
+  line (`jobs.labor_cost`) + one `part` line per `job_parts` row (snapshot `unit_price`), then
+  recompute totals.
+- **Verify:** Generating from a Customer job with labor + 2 consumed parts produces a `job`
+  invoice with 3 line items and correct totals; generating from an `Internal` job or an
+  ineligible state is rejected.
+
+### C9. `createApplianceSaleInvoice` server action (+ lifecycle → Sold)
+- [ ] Add `lib/operations/create-appliance-sale-invoice.ts` (`"use server"`): create an
+  `appliance_sale` invoice with an `appliance` line (the appliance price), optional `fee` lines
+  (delivery/installation), and optional `part` lines (accessories — hoses, vents); recompute
+  totals; then transition the appliance to `Retired` (`status='Sold'`) via
+  `transitionApplianceState`.
+- **Verify:** Selling an appliance with price + a delivery fee + 2 accessory parts produces an
+  `appliance_sale` invoice whose line kinds/total are correct **and** the appliance ends in
+  `lifecycle_state='Retired'`, `status='Sold'`; a sale of an already-`Retired` appliance is
+  rejected with no invoice created.
+
+### C10. `createRetailInvoice` server action (counter parts sale)
+- [ ] Add `lib/operations/create-retail-invoice.ts` (`"use server"`): create a `retail`
+  invoice (no job) with `part` line(s), draw down stock for each via C6, optionally add `fee`
+  lines, then recompute totals.
+- **Verify:** A retail sale of 3 units of a part creates a `retail` invoice with the part line
+  + correct total, reduces `quantity_on_hand` by 3, and writes a `part_stock_movements` row
+  with `job_part_id` NULL; an oversell is rejected with **no** invoice/stock/movement change.
+
+### C11. `/api/jobs` route handler
+- [ ] Add `app/api/jobs/route.ts` (GET list / `?id=` single, POST create) following the
+  `app/api/parts/route.ts` shape: typed success/error JSON, auth required, validation errors
+  (bad class↔type, Internal without appliance) → HTTP 400.
+- **Verify:** `POST` valid body → `{success:true, jobId}`; `POST` an invalid class↔type or
+  Internal-without-appliance → `400` with message; `GET` returns the created job;
+  unauthenticated → `401`.
+
+### C12. `/api/invoices` route handler
+- [ ] Add `app/api/invoices/route.ts` (GET list / `?id=` single with line items, POST) that
+  dispatches by `invoice_type` to C8 (`job`), C9 (`appliance_sale`), or C10 (`retail`); same
+  typed/auth/validation shape.
+- **Verify:** `POST` of each `invoice_type` → `{success:true, invoiceId}` with computed totals
+  (and, for `appliance_sale`, the appliance flipped to `Sold`); a missing/ineligible source →
+  `400`; `GET` returns the invoice + its line items; unauthenticated → `401`.
+
+### C13. Client hooks for Admin UI consumption
+- [ ] Add `lib/hooks/use-jobs.ts` and `lib/hooks/use-invoices.ts` wrapping the route handlers
+  with loading + error state, mirroring `lib/hooks/use-parts.ts`. No new pages/UI wiring.
+- **Verify:** From a temporary unwired probe, hooks expose correct `loading`/`error`
   transitions and surface errors without throwing; `npm run lint` passes.
-  → `lib/hooks/use-appliances.ts` (browser client) · `lib/hooks/use-parts.ts` (`/api/parts`) ·
-  `lib/hooks/c8-probe.tsx` (unwired) · loading→settled, errors via `error` not throw · `lint` 0 errors · `tsc` OK.
 
 ---
 
-## Phase D — Data Migration: `products` → `appliances` (GATED · requires Phase 0)
-
-> Optional within Wave 1 and **strictly gated**. Runs only after Phase 0 (clean `status`,
-> baseline migration) and Phases A–B (target table + constraints + RLS) are verified.
-> `products`/`product_images` remain intact until both apps cut over (separate, later task).
-
-### D1. Backfill dry-run (read-only)
-- [x] Produce a non-writing mapping of every `products` row to an `appliances` row (incl. `age`,
-  `features` json→jsonb cast, canonical `status`, derived initial `lifecycle_state`).
-- **Verify:** The dry-run reports 29 source rows mapped, **zero** rows that would violate any
-  A2 CHECK (proving 0.4 cleanup worked), and a deterministic `lifecycle_state` for each row.
-  → `lib/migration/products-to-appliances.ts` · `supabase_postgresql/d1_products_to_appliances_dry_run.sql` ·
-  `phase-d1-backfill-dry-run.md` · live: 29 mapped · 0 A2 violations · Listed×17 · Retired×12 · `tsc` OK.
-
-### D2. Execute idempotent backfill
-- [x] Insert mapped rows into `appliances` (and images into `appliance_images`) idempotently
-  (safe to re-run; keyed to avoid duplicates).
-- **Verify:** `appliances` count = `products` count (29); `appliance_images` count =
-  `product_images` count (84); re-running inserts 0 additional rows; spot-checked rows match
-  source field-for-field; no CHECK/RLS errors.
-  → `migrations/20260529200000_d2_backfill_products_to_appliances.sql` applied · 29/84 counts ·
-  re-run 0 inserts · 0 field mismatches · `phase-d2-backfill-execute.md`.
-
----
-
-## Wave 1 Exit Criteria
-- [ ] **Phase 0 complete & verified:** baseline migration captured, DDL un-stale (`age`),
-  `status` data normalized to canonical casing, and legacy RLS enabled **policy-first** with
-  the storefront confirmed unaffected.
-- [ ] All Phase A tables exist with constraints, triggers, indexes (idempotent, additive DDL).
-- [ ] RLS enabled and verified on every new table (Phase B).
-- [ ] Typed accessors/hooks/route handlers for appliances and parts exist and are verified (Phase C).
-- [ ] Lifecycle transitions enforced in DB + backend; storefront still reads only permitted rows.
-- [ ] Any data migration (Phase D) ran only after the Phase 0 gate, with row counts conserved.
-- [ ] Each task above was completed individually and **human-verified** before the next began.
+## Wave 2 Exit Criteria
+- [ ] All Phase A tables exist with constraints, sequence, triggers, and indexes (idempotent,
+  additive DDL); `products` / `product_images` / `appliances` reads untouched.
+- [ ] RLS enabled and verified **internal-only** on all six new tables (Phase B).
+- [ ] Jobs distinguish `Internal` vs `Customer` class with enforced class↔type pairings;
+  `Internal` jobs require an appliance, `Customer` jobs may target a customer-owned/none unit.
+- [ ] Job state transitions enforced in the backend and audited in `job_state_history`.
+- [ ] Parts consumption (job) and retail drawdown both reduce `parts.quantity_on_hand` and are
+  audited in `part_stock_movements`; over-consumption/oversell is rejected.
+- [ ] Invoices support all three sources — `job`, `appliance_sale`, `retail` — with
+  `labor`/`part`/`appliance`/`fee` line items, recomputed totals, and a unique sequential
+  `invoice_number`.
+- [ ] Appliance-sale invoices drive the appliance to `Retired` (`status='Sold'`) via
+  `transitionApplianceState`.
+- [ ] Typed accessors/hooks/route handlers for jobs and invoices exist and are verified (Phase C).
+- [ ] Storefront unaffected; each task above was completed individually and **human-verified**
+  before the next began.
