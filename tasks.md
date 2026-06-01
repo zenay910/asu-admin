@@ -209,17 +209,17 @@ appliances 1──* jobs 1──* job_parts *──1 parts
 > **no anon access**. Follows the `...130200_internal_tables_rls.sql` pattern.
 
 ### B1. RLS on `jobs` + `job_state_history`
-- [ ] Enable RLS on both. Authenticated + service_role full access; **no anon**.
+- [x] Enable RLS on both. Authenticated + service_role full access; **no anon**.
 - **Verify:** Anon `select` on each returns 0 rows / permission denied; authenticated context
   can read/write both; `pg_policies` lists the policies and `rls_enabled = true` on both tables.
 
 ### B2. RLS on `job_parts` + `part_stock_movements`
-- [ ] Enable RLS on both with the same internal-only pattern.
+- [x] Enable RLS on both with the same internal-only pattern.
 - **Verify:** Anon `select` on each returns 0 / permission denied; authenticated context can
   read/write both; policies confirmed via `pg_policies`.
 
 ### B3. RLS on `invoices` + `invoice_line_items`
-- [ ] Enable RLS on both with the same internal-only pattern (financial data — never anon).
+- [x] Enable RLS on both with the same internal-only pattern (financial data — never anon).
 - **Verify:** Anon `select` on each returns 0 / permission denied; authenticated context can
   read/write both; policies confirmed via `pg_policies`.
 
@@ -231,7 +231,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
 > No new pages/UI wiring. Reuse `lib/supabase/server.ts` / `client.ts`; do not hand-roll clients.
 
 ### C1. Shared TypeScript types
-- [ ] Add `lib/types/operations.ts` with `Job`, `JobClass`, `JobState`, `JobType`,
+- [x] Add `lib/types/operations.ts` with `Job`, `JobClass`, `JobState`, `JobType`,
   `JobStateHistory`, `JobPart`, `PartStockMovement`, `Invoice`, `InvoiceType`,
   `InvoiceStatus`, `InvoiceLineItem`, `LineItemKind`, matching the DDL/check constraints
   exactly (incl. nullable `appliance_id`/`job_id` and the traceability columns).
@@ -239,7 +239,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   constraint 1:1.
 
 ### C2. Job state machine + type taxonomy helper (pure, replaceable)
-- [ ] Add `lib/operations/job-lifecycle.ts` exporting `ALLOWED_JOB_TRANSITIONS`,
+- [x] Add `lib/operations/job-lifecycle.ts` exporting `ALLOWED_JOB_TRANSITIONS`,
   `getAllowedJobTransitions(from)`, `canTransitionJob(from, to)`, plus `JOB_TYPES_BY_CLASS`
   and `isValidJobTypeForClass(jobClass, jobType)` (Internal: Intake/Diagnostic/Repair/Cleaning;
   Customer: Diagnostic/Repair/Delivery/Installation/Maintenance/Warranty).
@@ -248,7 +248,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   rejects cross-class pairs (e.g. `Internal`+`Delivery` → `false`); `tsc` OK.
 
 ### C3. `jobs` server accessors
-- [ ] Add `lib/data/jobs.ts`: `listJobs(filters)` (incl. `job_class`/`state`/`job_type`),
+- [x] Add `lib/data/jobs.ts`: `listJobs(filters)` (incl. `job_class`/`state`/`job_type`),
   `getJobById(id)`, `createJob(input)`, `updateJob(id, input)`, using the cookie-bound server
   client; validate class↔type via C2 and the Internal⇒appliance_id rule; include
   `runJobsAccessorSmokeTest()`.
@@ -258,14 +258,14 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   `@/lib/supabase/server`; `npm run lint` and `tsc` pass.
 
 ### C4. `transitionJobState` server action
-- [ ] Add `lib/operations/transition-job-state.ts` (`"use server"`): auth gate, validate via
+- [x] Add `lib/operations/transition-job-state.ts` (`"use server"`): auth gate, validate via
   C2, update `state`, write a `job_state_history` row (rollback on insert failure), and
   `revalidatePath`.
 - **Verify:** A valid transition updates `state` **and** inserts one history row; an invalid
   transition is rejected with a friendly error and makes **no** DB change.
 
 ### C5. `consumePartsForJob` server action (job stock drawdown + audit)
-- [ ] Add `lib/operations/consume-parts.ts` (`"use server"`): insert `job_parts` row(s)
+- [x] Add `lib/operations/consume-parts.ts` (`"use server"`): insert `job_parts` row(s)
   snapshotting `parts.unit_price`, decrement `parts.quantity_on_hand` (reuse/guard the
   non-negative `adjustStock` rule), and write a `part_stock_movements` row (with `job_part_id`)
   per consumption.
@@ -274,7 +274,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   available stock is **rejected** with **no** `job_parts`, movement, or stock change.
 
 ### C6. Generalized stock-movement helper (retail/non-job path)
-- [ ] Add a reusable stock drawdown in the parts layer (e.g. `recordStockMovement(partId,
+- [x] Add a reusable stock drawdown in the parts layer (e.g. `recordStockMovement(partId,
   delta, { reason, jobPartId? , changedBy })`) that decrements `parts.quantity_on_hand` and
   writes a `part_stock_movements` row, usable when there is **no** job (retail sales). C5 may
   be refactored to call it.
@@ -283,7 +283,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   no stock/movement change.
 
 ### C7. `invoices` accessors + total recompute
-- [ ] Add `lib/data/invoices.ts`: `listInvoices(filters)` (incl. `invoice_type`/`status`),
+- [x] Add `lib/data/invoices.ts`: `listInvoices(filters)` (incl. `invoice_type`/`status`),
   `getInvoiceById(id)` (with line items), `createInvoice(input)`, `addLineItem(invoiceId,
   input)` (computes `line_total = quantity * unit_price`), and `recomputeInvoiceTotals(id)`
   (sum line items → `subtotal`, apply `tax` → `total`).
@@ -292,7 +292,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   `invoice_type`.
 
 ### C8. `generateInvoiceForJob` server action (Customer jobs)
-- [ ] Add `lib/operations/generate-invoice-for-job.ts` (`"use server"`): only for
+- [x] Add `lib/operations/generate-invoice-for-job.ts` (`"use server"`): only for
   `job_class='Customer'` jobs in `Completed`/`Closed`; create a `job` invoice with one `labor`
   line (`jobs.labor_cost`) + one `part` line per `job_parts` row (snapshot `unit_price`), then
   recompute totals.
@@ -301,7 +301,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   ineligible state is rejected.
 
 ### C9. `createApplianceSaleInvoice` server action (+ lifecycle → Sold)
-- [ ] Add `lib/operations/create-appliance-sale-invoice.ts` (`"use server"`): create an
+- [x] Add `lib/operations/create-appliance-sale-invoice.ts` (`"use server"`): create an
   `appliance_sale` invoice with an `appliance` line (the appliance price), optional `fee` lines
   (delivery/installation), and optional `part` lines (accessories — hoses, vents); recompute
   totals; then transition the appliance to `Retired` (`status='Sold'`) via
@@ -312,7 +312,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   rejected with no invoice created.
 
 ### C10. `createRetailInvoice` server action (counter parts sale)
-- [ ] Add `lib/operations/create-retail-invoice.ts` (`"use server"`): create a `retail`
+- [x] Add `lib/operations/create-retail-invoice.ts` (`"use server"`): create a `retail`
   invoice (no job) with `part` line(s), draw down stock for each via C6, optionally add `fee`
   lines, then recompute totals.
 - **Verify:** A retail sale of 3 units of a part creates a `retail` invoice with the part line
@@ -320,7 +320,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   with `job_part_id` NULL; an oversell is rejected with **no** invoice/stock/movement change.
 
 ### C11. `/api/jobs` route handler
-- [ ] Add `app/api/jobs/route.ts` (GET list / `?id=` single, POST create) following the
+- [x] Add `app/api/jobs/route.ts` (GET list / `?id=` single, POST create) following the
   `app/api/parts/route.ts` shape: typed success/error JSON, auth required, validation errors
   (bad class↔type, Internal without appliance) → HTTP 400.
 - **Verify:** `POST` valid body → `{success:true, jobId}`; `POST` an invalid class↔type or
@@ -328,7 +328,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   unauthenticated → `401`.
 
 ### C12. `/api/invoices` route handler
-- [ ] Add `app/api/invoices/route.ts` (GET list / `?id=` single with line items, POST) that
+- [x] Add `app/api/invoices/route.ts` (GET list / `?id=` single with line items, POST) that
   dispatches by `invoice_type` to C8 (`job`), C9 (`appliance_sale`), or C10 (`retail`); same
   typed/auth/validation shape.
 - **Verify:** `POST` of each `invoice_type` → `{success:true, invoiceId}` with computed totals
@@ -336,7 +336,7 @@ appliances 1──* jobs 1──* job_parts *──1 parts
   `400`; `GET` returns the invoice + its line items; unauthenticated → `401`.
 
 ### C13. Client hooks for Admin UI consumption
-- [ ] Add `lib/hooks/use-jobs.ts` and `lib/hooks/use-invoices.ts` wrapping the route handlers
+- [x] Add `lib/hooks/use-jobs.ts` and `lib/hooks/use-invoices.ts` wrapping the route handlers
   with loading + error state, mirroring `lib/hooks/use-parts.ts`. No new pages/UI wiring.
 - **Verify:** From a temporary unwired probe, hooks expose correct `loading`/`error`
   transitions and surface errors without throwing; `npm run lint` passes.

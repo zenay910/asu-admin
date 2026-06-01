@@ -143,6 +143,141 @@ export async function adjustStock(id: string, delta: number): Promise<Part> {
   return updatePart(id, { quantity_on_hand: nextQuantity })
 }
 
+export type RecordStockMovementOptions = {
+  reason?: string | null
+  jobPartId?: string | null
+  changedBy?: string | null
+}
+
+export type RecordStockMovementResult = {
+  quantityOnHand: number
+  movementId: string
+}
+
+/** Adjusts `quantity_on_hand` and writes an auditable `part_stock_movements` row. */
+export async function recordStockMovement(
+  partId: string,
+  delta: number,
+  options: RecordStockMovementOptions = {},
+): Promise<RecordStockMovementResult> {
+  const part = await getPartById(partId)
+  if (!part) {
+    throw new Error('Part not found')
+  }
+
+  const adjusted = await adjustStock(partId, delta)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('part_stock_movements')
+    .insert({
+      part_id: partId,
+      job_part_id: options.jobPartId ?? null,
+      delta,
+      quantity_after: adjusted.quantity_on_hand,
+      reason: options.reason ?? null,
+      changed_by: options.changedBy ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    try {
+      await adjustStock(partId, -delta)
+    } catch {
+      throw new Error(
+        `Audit log failed and stock rollback failed; manual reconciliation required for part ${partId}: ${error?.message ?? 'unknown error'}`,
+      )
+    }
+    throw new Error(
+      `Stock was adjusted but audit log failed; change was rolled back: ${error?.message ?? 'unknown error'}`,
+    )
+  }
+
+  return {
+    quantityOnHand: adjusted.quantity_on_hand,
+    movementId: String(data.id),
+  }
+}
+
+/** Dev-only smoke test for retail/non-job stock drawdown (authenticated context required). */
+export async function runRecordStockMovementSmokeTest(): Promise<{
+  movementId: string
+  quantityOnHand: number
+}> {
+  const suffix = Date.now()
+  const part = await createPart({
+    part_number: `C6-SMOKE-${suffix}`,
+    name: 'C6 stock movement smoke',
+    quantity_on_hand: 10,
+  })
+
+  const drawn = await recordStockMovement(part.id, -3, {
+    reason: 'C6 retail smoke',
+  })
+  if (drawn.quantityOnHand !== 7) {
+    throw new Error(`Expected quantity_on_hand 7, got ${drawn.quantityOnHand}`)
+  }
+
+  const supabase = await createClient()
+  const { data: movement, error: movementError } = await supabase
+    .from('part_stock_movements')
+    .select('delta, quantity_after, job_part_id')
+    .eq('id', drawn.movementId)
+    .single()
+  if (movementError || !movement) {
+    throw new Error(`Failed to read movement: ${movementError?.message}`)
+  }
+  if (
+    movement.delta !== -3 ||
+    movement.quantity_after !== 7 ||
+    movement.job_part_id != null
+  ) {
+    throw new Error('Movement row does not match retail drawdown')
+  }
+
+  const stockBeforeReject = (await getPartById(part.id))?.quantity_on_hand
+  const movementCountBefore = (
+    await supabase
+      .from('part_stock_movements')
+      .select('id', { count: 'exact', head: true })
+      .eq('part_id', part.id)
+  ).count
+
+  try {
+    await recordStockMovement(part.id, -100)
+    throw new Error('Expected over-draw to throw')
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes('negative')) {
+      throw error
+    }
+  }
+
+  const stockAfterReject = (await getPartById(part.id))?.quantity_on_hand
+  if (stockAfterReject !== stockBeforeReject) {
+    throw new Error('Over-draw must not change quantity_on_hand')
+  }
+
+  const { count: movementCountAfter } = await supabase
+    .from('part_stock_movements')
+    .select('id', { count: 'exact', head: true })
+    .eq('part_id', part.id)
+  if (movementCountAfter !== movementCountBefore) {
+    throw new Error('Over-draw must not insert an additional movement row')
+  }
+
+  const { error: deleteError } = await supabase
+    .from('parts')
+    .delete()
+    .eq('id', part.id)
+  throwOnError(deleteError, 'Failed to clean up smoke-test part')
+
+  return {
+    movementId: drawn.movementId,
+    quantityOnHand: drawn.quantityOnHand,
+  }
+}
+
 /** Dev-only accessor smoke test (authenticated server context required). */
 export async function runPartsAccessorSmokeTest(): Promise<{
   createdId: string
