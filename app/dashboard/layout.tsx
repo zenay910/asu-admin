@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { ThemeProvider } from 'next-themes'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
 import DashboardNavbar from '@/components/dashboard-navbar'
 import { logout } from '@/app/actions'
 import { createClient } from '@/lib/supabase/server'
@@ -22,6 +24,7 @@ export default async function DashboardLayout({
   }
 
   return (
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
@@ -51,6 +54,8 @@ export default async function DashboardLayout({
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {children}
       </main>
+      <Toaster richColors closeButton />
     </div>
+    </ThemeProvider>
   )
 }

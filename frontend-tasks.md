@@ -76,31 +76,100 @@ Overview ──┬── Inventory (appliances + lifecycle)
 ## Phase F0 — UI Foundation
 
 ### F0.1 Install required shadcn primitives
-- [ ] Add `card`, `table`, `badge`, `dialog`, `select`, `tabs`, `dropdown-menu`, `sonner`,
+- [x] Add `card`, `table`, `badge`, `dialog`, `select`, `tabs`, `dropdown-menu`, `sonner`,
   `skeleton`, `separator`, `sheet` via `npx shadcn@latest add ...` (new-york / neutral, per
   `components.json`).
 - **Verify:** each component file lands in `components/ui/`; `npm run lint` and `next build`
   pass with no new errors.
 
 ### F0.2 Toast provider
-- [ ] Mount the sonner `<Toaster />` in `app/dashboard/layout.tsx` so mutations can surface
+- [x] Mount the sonner `<Toaster />` in `app/dashboard/layout.tsx` so mutations can surface
   success/error toasts.
 - **Verify:** a temporary `toast()` call renders a visible toast on a dashboard page; removed
   after confirmation.
 
 ### F0.3 Shared presentational helpers
-- [ ] Add `components/status-badge.tsx` (variants for appliance `status`, `lifecycle_state`,
+- [x] Add `components/status-badge.tsx` (variants for appliance `status`, `lifecycle_state`,
   job `state`/`job_class`, invoice `status`/`invoice_type`), `lib/format.ts` (money + date
   formatters), a small `DataTable` wrapper over the shadcn table, and a `PageHeader`.
 - **Verify:** rendered in a scratch route with sample data; `npm run lint` and `tsc --noEmit`
   pass.
 
 ### F0.4 Navigation + landing IA
-- [ ] Expand `components/dashboard-navbar.tsx` to **Overview / Inventory / Parts / Jobs /
+- [x] Expand `components/dashboard-navbar.tsx` to **Overview / Inventory / Parts / Jobs /
   Invoices**, and replace the placeholder cards in `app/dashboard/page.tsx` with section entry
   points.
 - **Verify:** every nav link routes to its section and shows the correct active state on each
   route.
+
+---
+
+## Phase F0.5 — Brand Theme Port (asu-frontend → asu-admin)
+
+> Intermission between foundation and feature build-out: adopt asu-frontend's fonts and brand
+> palette in `asu-admin` **while keeping shadcn**. We re-skin the existing shadcn HSL token
+> slots (so every `components/ui/*` primitive inherits the brand automatically) rather than
+> replacing shadcn. **Dark mode is kept** — both a light and a dark variant of the palette are
+> branded.
+
+Source of truth for the brand: `asu-frontend/src/app/globals.css` +
+`asu-frontend/src/app/layout.tsx` — fonts **Outfit** (sans) + **Roboto Mono** (mono); palette
+crimson `#8C1F1F` (+ `crimson-dark`/`crimson-lt`/`crimson-pale`), charcoal `#1e1e1e`,
+steel `#3d3d3d`, mid `#6b6b6b`, smoke `#f5f5f5`, rule `#e4e4e4`; the `.type-*` scale,
+`.section-eyebrow`, `.divider-red`; sharp 2px corners. The asu-frontend `.btn-*`/`.card`
+primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
+
+**Token remap (brand → shadcn HSL slots in `app/globals.css`):**
+- Light `:root` — `--background` `0 0% 96%` (smoke); `--foreground` `0 0% 12%` (charcoal);
+  `--card`/`--popover` `0 0% 100%` (+ charcoal fg); `--primary` `0 64% 34%` (crimson) /
+  `--primary-foreground` `0 0% 100%`; `--secondary`/`--muted` `0 0% 92%`,
+  `--muted-foreground` `0 0% 42%` (mid); `--accent` `0 43% 96%` (crimson-pale) /
+  `--accent-foreground` `0 64% 34%`; `--border`/`--input` `0 0% 89%` (rule); `--ring`
+  `0 64% 34%`; `--destructive` `0 72% 45%` (+ `0 0% 100%` fg); `--radius` `0.125rem`.
+- Dark `.dark` **and** `@media (prefers-color-scheme: dark)` — `--background` `0 0% 12%`
+  (charcoal); `--foreground` `0 0% 96%` (smoke); `--card`/`--popover` `0 0% 15%`; `--primary`
+  `0 65% 48%` (crimson-lt); `--secondary`/`--muted` `0 0% 20%`, `--muted-foreground`
+  `0 0% 65%`; `--accent` `0 40% 22%` / `--accent-foreground` `0 0% 96%`; `--border`/`--input`
+  `0 0% 24%` (steel); `--ring` `0 65% 48%`.
+- Also expose raw brand vars (`--crimson`, `--crimson-dark`, `--crimson-lt`, `--crimson-pale`,
+  `--charcoal`, `--steel`, `--mid`, `--smoke`, `--rule`) for direct use.
+
+### F0.5.1 Fonts → Outfit + Roboto Mono
+- [ ] In `app/layout.tsx`, replace `Geist`/`Geist_Mono` with `Outfit({ variable: '--font-sans' })`
+  and `Roboto_Mono({ variable: '--font-mono' })` (mirroring asu-frontend), and update the
+  `@theme inline { --font-sans / --font-mono }` block in `app/globals.css` to reference them.
+- **Verify:** the computed `body` font-family resolves to **Outfit** and mono/code elements use
+  **Roboto Mono**; `next build` passes.
+
+### F0.5.2 Re-skin shadcn tokens (light + dark)
+- [ ] Rewrite the `:root`, `@media (prefers-color-scheme: dark)`, and `.dark` token blocks in
+  `app/globals.css` per the remap table above; add the raw brand vars; set `--radius` to the
+  sharp 2px value. Keep shadcn — only token **values** change.
+- **Verify:** a shadcn `Button` renders crimson `primary`; `bg-background` is smoke (light) /
+  charcoal (dark); `border-border` uses rule/steel; adding `.dark` flips the full palette;
+  text/background contrast is legible in both themes.
+
+### F0.5.3 Port typography scale + brand utilities
+- [ ] Add `.type-display`, `.type-heading`, `.type-subheading`, `.type-body`, `.type-label`,
+  `.type-caption`, `.section-eyebrow`, and `.divider-red` to `app/globals.css` (token-aware).
+  Do **not** port `.btn-*`/`.card` (shadcn provides those).
+- **Verify:** a scratch element using `type-display` and `type-label` renders with the correct
+  Outfit / Roboto-Mono weights, sizes, and letter-spacing.
+
+### F0.5.4 Migrate shared chrome to semantic tokens
+- [ ] Convert `app/dashboard/layout.tsx`, `components/dashboard-navbar.tsx`, and
+  `app/dashboard/page.tsx` from hardcoded `zinc-*`/`dark:` classes to semantic tokens
+  (`bg-background`, `text-foreground`, `border-border`, `bg-card`, `text-muted-foreground`;
+  active nav uses `bg-primary text-primary-foreground`).
+- **Verify:** the three files contain **no** hardcoded `zinc-*`/`dark:` classes; the dashboard
+  shell, navbar active state, and landing cards render branded in both light and dark;
+  `npm run lint` + `next build` pass.
+
+### F0.5.5 Theme QA gate
+- [ ] Visual + build check of the rebrand against asu-frontend.
+- **Verify:** side-by-side, admin fonts and the crimson/charcoal/smoke palette visually match
+  asu-frontend; the F0 primitives (toast, table, badge) inherit the brand; `npm run lint` and
+  `next build` are clean.
 
 ---
 
