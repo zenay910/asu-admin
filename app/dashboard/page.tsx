@@ -52,11 +52,15 @@ export default function Dashboard() {
         {sections.map((section) => {
           const Icon = section.icon
           return (
-            <Link key={section.href} href={section.href} className="block">
-              <Card className="h-full transition-colors hover:border-zinc-300 dark:hover:border-zinc-700">
+            <Link
+              key={section.href}
+              href={section.href}
+              className="group block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <Card className="h-full transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-primary group-hover:shadow-md group-active:translate-y-0 group-active:border-primary group-active:shadow-sm">
                 <CardHeader>
-                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
-                    <Icon className="h-5 w-5 text-zinc-700 dark:text-zinc-300" />
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground transition-colors duration-200 group-hover:bg-primary group-hover:text-primary-foreground group-active:bg-primary/90 group-active:text-primary-foreground">
+                    <Icon className="h-5 w-5" />
                   </div>
                   <CardTitle>{section.title}</CardTitle>
                   <CardDescription>{section.description}</CardDescription>

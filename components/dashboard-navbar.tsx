@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
 const navItems = [
   { label: 'Overview', href: '/dashboard' },
@@ -31,11 +32,17 @@ export default function DashboardNavbar() {
             key={item.href}
             href={item.href}
             aria-current={isActive ? 'page' : undefined}
-            className={`rounded-md px-3 py-2 text-sm transition-colors ${
+            className={cn(
+              'rounded-md px-3 py-2 text-sm font-medium transition-all duration-150',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               isActive
-                ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
-            }`}
+                ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 active:bg-primary/80 active:shadow-none'
+                : [
+                    'text-muted-foreground',
+                    'hover:bg-accent hover:text-accent-foreground',
+                    'active:bg-accent/80 active:text-accent-foreground',
+                  ],
+            )}
           >
             {item.label}
           </Link>

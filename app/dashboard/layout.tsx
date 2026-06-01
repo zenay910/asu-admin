@@ -25,13 +25,13 @@ export default async function DashboardLayout({
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <header className="border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-card/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard"
-              className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+              className="rounded-sm text-lg font-semibold text-foreground transition-colors duration-150 hover:text-primary active:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               ASU Admin
             </Link>
@@ -39,7 +39,7 @@ export default async function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="truncate text-sm text-zinc-600 dark:text-zinc-400">
+            <span className="truncate text-sm text-muted-foreground">
               {data.user.email}
             </span>
             <form action={logout}>

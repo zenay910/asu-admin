@@ -135,14 +135,14 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
   `--charcoal`, `--steel`, `--mid`, `--smoke`, `--rule`) for direct use.
 
 ### F0.5.1 Fonts → Outfit + Roboto Mono
-- [ ] In `app/layout.tsx`, replace `Geist`/`Geist_Mono` with `Outfit({ variable: '--font-sans' })`
+- [x] In `app/layout.tsx`, replace `Geist`/`Geist_Mono` with `Outfit({ variable: '--font-sans' })`
   and `Roboto_Mono({ variable: '--font-mono' })` (mirroring asu-frontend), and update the
   `@theme inline { --font-sans / --font-mono }` block in `app/globals.css` to reference them.
 - **Verify:** the computed `body` font-family resolves to **Outfit** and mono/code elements use
   **Roboto Mono**; `next build` passes.
 
 ### F0.5.2 Re-skin shadcn tokens (light + dark)
-- [ ] Rewrite the `:root`, `@media (prefers-color-scheme: dark)`, and `.dark` token blocks in
+- [x] Rewrite the `:root`, `@media (prefers-color-scheme: dark)`, and `.dark` token blocks in
   `app/globals.css` per the remap table above; add the raw brand vars; set `--radius` to the
   sharp 2px value. Keep shadcn — only token **values** change.
 - **Verify:** a shadcn `Button` renders crimson `primary`; `bg-background` is smoke (light) /
@@ -150,14 +150,14 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
   text/background contrast is legible in both themes.
 
 ### F0.5.3 Port typography scale + brand utilities
-- [ ] Add `.type-display`, `.type-heading`, `.type-subheading`, `.type-body`, `.type-label`,
+- [x] Add `.type-display`, `.type-heading`, `.type-subheading`, `.type-body`, `.type-label`,
   `.type-caption`, `.section-eyebrow`, and `.divider-red` to `app/globals.css` (token-aware).
   Do **not** port `.btn-*`/`.card` (shadcn provides those).
 - **Verify:** a scratch element using `type-display` and `type-label` renders with the correct
   Outfit / Roboto-Mono weights, sizes, and letter-spacing.
 
 ### F0.5.4 Migrate shared chrome to semantic tokens
-- [ ] Convert `app/dashboard/layout.tsx`, `components/dashboard-navbar.tsx`, and
+- [x] Convert `app/dashboard/layout.tsx`, `components/dashboard-navbar.tsx`, and
   `app/dashboard/page.tsx` from hardcoded `zinc-*`/`dark:` classes to semantic tokens
   (`bg-background`, `text-foreground`, `border-border`, `bg-card`, `text-muted-foreground`;
   active nav uses `bg-primary text-primary-foreground`).
