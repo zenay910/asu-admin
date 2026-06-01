@@ -358,3 +358,10 @@ export async function importProductsFromRows(rows, options = {}) {
 
   return result;
 }
+
+export {
+  buildProductPayload,
+  collectImages,
+  getPreUploadedImageUrls,
+  uploadImageToStorage,
+};

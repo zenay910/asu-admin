@@ -166,7 +166,7 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
   `npm run lint` + `next build` pass.
 
 ### F0.5.5 Theme QA gate
-- [ ] Visual + build check of the rebrand against asu-frontend.
+- [x] Visual + build check of the rebrand against asu-frontend.
 - **Verify:** side-by-side, admin fonts and the crimson/charcoal/smoke palette visually match
   asu-frontend; the F0 primitives (toast, table, badge) inherit the brand; `npm run lint` and
   `next build` are clean.

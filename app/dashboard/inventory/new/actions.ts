@@ -1,7 +1,6 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { importProductFromForm } from './form_import.mjs'
+import { createApplianceDualWrite } from '@/lib/inventory/appliance-dual-write'
 import {
   initialInventoryFormValues,
   type InventoryFormFieldErrors,
@@ -86,7 +85,10 @@ function toFriendlyErrorMessage(message: string) {
     return `Please choose a valid ${field}.`
   }
 
-  if (/Product insert failed:/i.test(message)) {
+  if (
+    /Product (insert|update|mirror) failed:/i.test(message) ||
+    /Appliance/i.test(message)
+  ) {
     return 'We could not save this inventory item. Please review your details and try again.'
   }
 
@@ -108,14 +110,12 @@ export async function createInventoryItem(
   }
 
   try {
-    const { productId, uploadedImages } = await importProductFromForm(formData)
-
-    revalidatePath('/dashboard')
-    revalidatePath('/dashboard/inventory/new')
+    const { applianceId, uploadedImages } =
+      await createApplianceDualWrite(formData)
 
     return {
       error: null,
-      success: `Inventory item created (ID: ${productId}) with ${uploadedImages} image(s).`,
+      success: `Inventory item created (ID: ${applianceId}) with ${uploadedImages} image(s).`,
       values: initialInventoryFormValues,
       fieldErrors: {},
     }

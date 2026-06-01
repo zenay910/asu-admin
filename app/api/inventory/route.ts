@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { importProductFromForm } from '@/app/dashboard/inventory/new/form_import.mjs';
+import { createApplianceDualWrite } from '@/lib/inventory/appliance-dual-write';
 
 // Configure API route to accept larger payloads
 export const config = {
@@ -13,12 +13,14 @@ export const config = {
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const { productId, uploadedImages } = await importProductFromForm(formData);
+    const { applianceId, uploadedImages } =
+      await createApplianceDualWrite(formData);
 
     return NextResponse.json({
       success: true,
-      message: `Inventory item created (ID: ${productId}) with ${uploadedImages} image(s).`,
-      productId,
+      message: `Inventory item created (ID: ${applianceId}) with ${uploadedImages} image(s).`,
+      applianceId,
+      productId: applianceId,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
