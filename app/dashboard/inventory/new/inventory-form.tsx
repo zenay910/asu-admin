@@ -2,11 +2,13 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { compressImagesForUpload } from "@/lib/images/compress";
 import { createInventoryItem } from "./actions";
 import { initialInventoryFormState } from "./types";
 
@@ -127,7 +129,7 @@ export default function InventoryForm() {
   const [extractSuccess, setExtractSuccess] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
 
-  // Images are submitted with the form and uploaded after the product is created.
+  // Images are submitted with the form and uploaded after the appliance is created.
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -199,8 +201,6 @@ export default function InventoryForm() {
       if (!response.ok) throw new Error("Extraction failed");
       const data = await response.json();
 
-      console.log('Gemini response: ', data);
-
       // Map Gemini JSON → form values
       setAiValues({
         title: data.title ?? "",
@@ -238,7 +238,16 @@ export default function InventoryForm() {
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.currentTarget.files || []);
-    setImageFiles(files);
+    if (files.length === 0) {
+      setImageFiles([]);
+      return;
+    }
+    try {
+      const compressed = await compressImagesForUpload(files);
+      setImageFiles(compressed);
+    } catch {
+      setImageFiles(files);
+    }
   };
 
   const handleClearImages = () => {
@@ -262,6 +271,12 @@ export default function InventoryForm() {
     Object.entries(aiValues).forEach(([key, value]) => {
       if (value) formData.set(key, value);
     });
+
+    formData.delete("images");
+    for (const file of imageFiles) {
+      formData.append("images", file);
+    }
+
     formAction(formData);
   };
 
@@ -274,8 +289,24 @@ export default function InventoryForm() {
         </div>
       )}
       {state.success && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300">
-          {state.success}
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300 space-y-2">
+          <p>{state.success}</p>
+          {state.createdApplianceId ? (
+            <div className="flex flex-wrap gap-3 text-sm font-medium">
+              <Link
+                href={`/dashboard/inventory/${state.createdApplianceId}`}
+                className="underline underline-offset-2"
+              >
+                View appliance
+              </Link>
+              <Link
+                href="/dashboard/inventory/view"
+                className="underline underline-offset-2"
+              >
+                Open inventory list
+              </Link>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -539,7 +570,7 @@ export default function InventoryForm() {
 
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
-          {/* Not AI-filled */}
+          {/* Not AI-filled; Published is set on the detail page once Listed */}
           <Input
             id="status"
             name="status"
@@ -548,9 +579,12 @@ export default function InventoryForm() {
             aria-invalid={Boolean(state.fieldErrors.status)}
           />
           <FieldError message={state.fieldErrors.status} />
+          <p className="text-xs text-muted-foreground">
+            New items start as Intake / Draft. Storefront publish happens after
+            Listed.
+          </p>
           <datalist id="status-options">
             <option value="Draft" />
-            <option value="Published" />
             <option value="Archived" />
           </datalist>
         </div>
@@ -676,7 +710,6 @@ export default function InventoryForm() {
             ref={fileInputRef}
             id="images"
             type="file"
-            name="images"
             accept="image/*"
             multiple
             onChange={handleImageSelect}

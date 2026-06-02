@@ -1,0 +1,3 @@
+{"sessionId":"c1f399","location":"inventory-form.tsx:handleImageSelect","message":"After compress","data":{"rawBytes":6709443,"compressedBytes":793729,"count":3},"timestamp":1780429676761,"hypothesisId":"H-A,H-C"}
+{"sessionId":"c1f399","location":"inventory-form.tsx:handleFormAction","message":"Before image replace","data":{"nativeCount":0,"nativeBytes":0,"stateCount":3,"stateBytes":793729},"timestamp":1780429678588,"hypothesisId":"H-B,H-D"}
+{"sessionId":"c1f399","location":"inventory-form.tsx:handleFormAction","message":"After image replace","data":{"finalCount":3,"finalBytes":793729,"over4mb":false},"timestamp":1780429678588,"hypothesisId":"H-B,H-D,H-C"}

@@ -22,6 +22,7 @@ export type InventoryFormFieldErrors = Partial<Record<keyof InventoryFormValues,
 export type InventoryFormState = {
   error: string | null
   success: string | null
+  createdApplianceId: string | null
   values: InventoryFormValues
   fieldErrors: InventoryFormFieldErrors
 }
@@ -48,6 +49,7 @@ export const initialInventoryFormValues: InventoryFormValues = {
 export const initialInventoryFormState: InventoryFormState = {
   error: null,
   success: null,
+  createdApplianceId: null,
   values: initialInventoryFormValues,
   fieldErrors: {},
 }

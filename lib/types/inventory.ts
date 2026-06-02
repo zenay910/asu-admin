@@ -66,6 +66,23 @@ export type ApplianceImage = {
   sort_order: number
 }
 
+/** Row shape for public.appliance_state_history */
+export type ApplianceStateHistory = {
+  id: string
+  created_at: string
+  appliance_id: string
+  from_state: LifecycleState | null
+  to_state: LifecycleState
+  changed_by: string | null
+  reason: string | null
+}
+
+export type ApplianceDetail = {
+  appliance: Appliance
+  images: ApplianceImage[]
+  stateHistory: ApplianceStateHistory[]
+}
+
 /** Row shape for public.parts */
 export type Part = {
   id: string

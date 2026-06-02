@@ -3,8 +3,11 @@ import type {
   Appliance,
   ApplianceCondition,
   ApplianceConfiguration,
+  ApplianceDetail,
   ApplianceDimensions,
   ApplianceFuel,
+  ApplianceImage,
+  ApplianceStateHistory,
   ApplianceStatus,
   ApplianceUnitType,
   LifecycleState,
@@ -113,6 +116,90 @@ export async function getApplianceById(id: string): Promise<Appliance | null> {
   throwOnError(error, 'Failed to fetch appliance')
   if (!data) return null
   return mapAppliance(data as Record<string, unknown>)
+}
+
+function mapApplianceImage(row: Record<string, unknown>): ApplianceImage {
+  return {
+    id: String(row.id),
+    created_at: String(row.created_at),
+    appliance_id: String(row.appliance_id),
+    photo_url: String(row.photo_url),
+    sort_order: Number(row.sort_order ?? 0),
+  }
+}
+
+function mapApplianceStateHistory(
+  row: Record<string, unknown>,
+): ApplianceStateHistory {
+  return {
+    id: String(row.id),
+    created_at: String(row.created_at),
+    appliance_id: String(row.appliance_id),
+    from_state: (row.from_state as LifecycleState | null) ?? null,
+    to_state: row.to_state as LifecycleState,
+    changed_by: row.changed_by != null ? String(row.changed_by) : null,
+    reason: row.reason != null ? String(row.reason) : null,
+  }
+}
+
+export async function getApplianceDetailById(
+  id: string,
+): Promise<ApplianceDetail | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('appliances')
+    .select(
+      `
+      *,
+      appliance_images (
+        id,
+        created_at,
+        appliance_id,
+        photo_url,
+        sort_order
+      ),
+      appliance_state_history (
+        id,
+        created_at,
+        appliance_id,
+        from_state,
+        to_state,
+        changed_by,
+        reason
+      )
+    `,
+    )
+    .eq('id', id)
+    .maybeSingle()
+
+  throwOnError(error, 'Failed to fetch appliance detail')
+  if (!data) return null
+
+  const row = data as Record<string, unknown>
+  const rawImages = (row.appliance_images as Record<string, unknown>[]) ?? []
+  const rawHistory =
+    (row.appliance_state_history as Record<string, unknown>[]) ?? []
+
+  const images = rawImages
+    .map((image) => mapApplianceImage(image))
+    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+
+  const stateHistory = rawHistory
+    .map((entry) => mapApplianceStateHistory(entry))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+
+  return {
+    appliance: mapAppliance(
+      Object.fromEntries(
+        Object.entries(row).filter(
+          ([key]) =>
+            key !== 'appliance_images' && key !== 'appliance_state_history',
+        ),
+      ) as Record<string, unknown>,
+    ),
+    images,
+    stateHistory,
+  }
 }
 
 export async function createAppliance(

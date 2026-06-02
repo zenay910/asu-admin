@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { compressImagesForUpload } from '@/lib/images/compress'
 import { uploadImages } from '@/lib/supabase/storage'
 import { updateInventoryItem } from './actions'
 import { initialInventoryFormState, type InventoryFormValues, type InventoryFormState } from '../new/types'
@@ -135,8 +136,17 @@ export default function EditInventoryForm({
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.currentTarget.files || [])
-    setImageFiles(files)
     setUploadError(null)
+    if (files.length === 0) {
+      setImageFiles([])
+      return
+    }
+    try {
+      const compressed = await compressImagesForUpload(files)
+      setImageFiles(compressed)
+    } catch {
+      setImageFiles(files)
+    }
   }
 
   const handleUploadImages = async () => {

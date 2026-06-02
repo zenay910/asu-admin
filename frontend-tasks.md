@@ -179,7 +179,7 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
 > `products` parity so the storefront never goes stale.
 
 ### F1.1 Dual-write appliance server actions
-- [ ] Add `"use server"` create/update/delete appliance actions that write `appliances` +
+- [x] Add `"use server"` create/update/delete appliance actions that write `appliances` +
   `appliance_images` (source of truth) **and mirror** the corresponding row(s) to `products` +
   `product_images`, with explicit field mapping and image-storage handling (reuse
   `lib/supabase/storage.ts` and the upload pattern in
@@ -190,33 +190,33 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
   `lifecycle_state='Listed'`; re-running an edit keeps both tables consistent.
 
 ### F1.2 Appliance list page
-- [ ] Replace the `products` read in `app/dashboard/inventory/view/page.tsx` with
+- [x] Replace the `products` read in `app/dashboard/inventory/view/page.tsx` with
   `useAppliances`; render a `DataTable` with `StatusBadge` + lifecycle badge columns and
   filters (status, lifecycle_state, type, brand) + skeleton loading.
 - **Verify:** the page lists all live `appliances` rows (29) sourced from `appliances` (not
   `products`); each filter narrows results correctly.
 
 ### F1.3 Appliance detail page
-- [ ] Add `app/dashboard/inventory/[id]/page.tsx`: specs, image gallery, current
+- [x] Add `app/dashboard/inventory/[id]/page.tsx`: specs, image gallery, current
   `lifecycle_state` + `status`, and an `appliance_state_history` timeline.
 - **Verify:** renders a real appliance with all fields and its ordered state history.
 
 ### F1.4 Lifecycle transition control
-- [ ] On the detail page, render transition buttons gated by `getAllowedTransitions`, with a
+- [x] On the detail page, render transition buttons gated by `getAllowedTransitions`, with a
   reason input, calling `transitionApplianceState`; toast the result.
 - **Verify:** a valid transition updates `lifecycle_state` **and** writes one
   `appliance_state_history` row and toasts success; disallowed targets are hidden/disabled;
   `Published` is only offered when the unit is `Listed`.
 
 ### F1.5 New appliance form cutover
-- [ ] Point `app/dashboard/inventory/new` at the F1.1 dual-write create action; reuse the
+- [x] Point `app/dashboard/inventory/new` at the F1.1 dual-write create action; reuse the
   Gemini extraction (`app/api/extract-appliance`) and image upload; default
   `lifecycle_state='Intake'`.
 - **Verify:** a newly created appliance appears in the appliances list **and** as a
   storefront-eligible `products` row (subject to the Published/Listed rule).
 
 ### F1.6 Edit + delete appliance
-- [ ] Wire the edit form to the dual-write update action; implement delete with storage cleanup
+- [x] Wire the edit form to the dual-write update action; implement delete with storage cleanup
   and image cascade, mirrored to `products`/`product_images`.
 - **Verify:** edits persist to **both** tables; delete removes the row from both tables and the
   associated storage objects are gone.

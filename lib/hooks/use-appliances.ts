@@ -16,11 +16,42 @@ export type ApplianceListFilters = {
   limit?: number
 }
 
+export type ApplianceListRow = Appliance & {
+  /** First image by `sort_order`, for list thumbnails. */
+  primary_image_url: string | null
+}
+
 export type UseAppliancesResult = {
-  appliances: Appliance[]
+  appliances: ApplianceListRow[]
   loading: boolean
   error: string | null
   refetch: () => void
+}
+
+type ApplianceImageRow = {
+  photo_url: string
+  sort_order: number
+}
+
+function pickPrimaryImageUrl(
+  images: ApplianceImageRow[] | null | undefined,
+): string | null {
+  if (!images?.length) return null
+  const sorted = [...images].sort(
+    (a, b) => a.sort_order - b.sort_order || 0,
+  )
+  return sorted[0]?.photo_url ?? null
+}
+
+function mapApplianceListRow(row: Record<string, unknown>): ApplianceListRow {
+  const { appliance_images: rawImages, ...rest } = row
+  const appliance = mapAppliance(rest)
+  return {
+    ...appliance,
+    primary_image_url: pickPrimaryImageUrl(
+      rawImages as ApplianceImageRow[] | undefined,
+    ),
+  }
 }
 
 function mapAppliance(row: Record<string, unknown>): Appliance {
@@ -52,7 +83,7 @@ function mapAppliance(row: Record<string, unknown>): Appliance {
 export function useAppliances(
   filters: ApplianceListFilters = {},
 ): UseAppliancesResult {
-  const [appliances, setAppliances] = useState<Appliance[]>([])
+  const [appliances, setAppliances] = useState<ApplianceListRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const filterKey = JSON.stringify(filters)
@@ -65,7 +96,15 @@ export function useAppliances(
       const supabase = createClient()
       let query = supabase
         .from('appliances')
-        .select('*')
+        .select(
+          `
+          *,
+          appliance_images (
+            photo_url,
+            sort_order
+          )
+        `,
+        )
         .order('created_at', { ascending: false })
 
       const parsed = JSON.parse(filterKey) as ApplianceListFilters
@@ -85,7 +124,9 @@ export function useAppliances(
       }
 
       setAppliances(
-        (data ?? []).map((row) => mapAppliance(row as Record<string, unknown>)),
+        (data ?? []).map((row) =>
+          mapApplianceListRow(row as Record<string, unknown>),
+        ),
       )
     } catch (err) {
       setAppliances([])

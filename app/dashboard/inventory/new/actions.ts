@@ -115,7 +115,8 @@ export async function createInventoryItem(
 
     return {
       error: null,
-      success: `Inventory item created (ID: ${applianceId}) with ${uploadedImages} image(s).`,
+      success: `Appliance created with ${uploadedImages} image(s).`,
+      createdApplianceId: applianceId,
       values: initialInventoryFormValues,
       fieldErrors: {},
     }
@@ -125,6 +126,7 @@ export async function createInventoryItem(
     return {
       error: toFriendlyErrorMessage(message),
       success: null,
+      createdApplianceId: null,
       values,
       fieldErrors: buildFieldErrors(message),
     }

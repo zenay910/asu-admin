@@ -121,6 +121,7 @@ export async function updateInventoryItem(
     return {
       error: null,
       success: `Product updated successfully with ${uploadedImages} new image(s).`,
+      createdApplianceId: null,
       values: initialInventoryFormValues,
       fieldErrors: {},
     }
@@ -130,6 +131,7 @@ export async function updateInventoryItem(
     return {
       error: toFriendlyErrorMessage(message),
       success: null,
+      createdApplianceId: null,
       values,
       fieldErrors: buildFieldErrors(message),
     }

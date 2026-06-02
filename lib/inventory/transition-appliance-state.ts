@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAppliance, getApplianceById } from '@/lib/data/appliances'
+import { applianceToProductMirrorPayload } from '@/lib/inventory/appliance-product-mirror'
 import { canTransition, getAllowedTransitions } from '@/lib/inventory/lifecycle'
 import { createClient } from '@/lib/supabase/server'
 import type {
@@ -138,13 +139,40 @@ export async function transitionApplianceState(
     )
   }
 
-  revalidatePath('/dashboard')
-  revalidatePath('/dashboard/inventory/view')
-
   const appliance = await getApplianceById(applianceId)
   if (!appliance) {
     return transitionError('Appliance not found after update.')
   }
+
+  const mirrorPayload = applianceToProductMirrorPayload(appliance)
+  const { error: mirrorError } = await supabase
+    .from('products')
+    .update(mirrorPayload)
+    .eq('id', applianceId)
+
+  if (mirrorError) {
+    await supabase
+      .from('appliances')
+      .update({
+        lifecycle_state: fromState,
+        status: current.status,
+      })
+      .eq('id', applianceId)
+    await supabase
+      .from('appliance_state_history')
+      .delete()
+      .eq('appliance_id', applianceId)
+      .eq('to_state', toState)
+      .eq('from_state', fromState)
+    return transitionError(
+      `Lifecycle updated but storefront mirror failed; change was rolled back: ${mirrorError.message}`,
+    )
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/inventory')
+  revalidatePath('/dashboard/inventory/view')
+  revalidatePath(`/dashboard/inventory/${applianceId}`)
 
   return { success: true, appliance }
 }
