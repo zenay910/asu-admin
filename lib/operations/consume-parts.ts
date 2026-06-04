@@ -94,6 +94,9 @@ export async function consumePartsForJob(
   }
 
   revalidatePath('/dashboard')
+  revalidatePath('/dashboard/jobs')
+  revalidatePath(`/dashboard/jobs/${jobId}`)
+  revalidatePath('/dashboard/parts')
 
   return {
     success: true,

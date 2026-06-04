@@ -100,6 +100,10 @@ export async function generateInvoiceForJob(
 
     const updated = await recomputeInvoiceTotals(invoice.id)
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/jobs')
+    revalidatePath(`/dashboard/jobs/${jobId}`)
+    revalidatePath('/dashboard/invoices')
+    revalidatePath(`/dashboard/invoices/${invoice.id}`)
 
     return {
       success: true,

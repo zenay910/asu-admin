@@ -1,7 +1,9 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AppliancePartCompatibilityManager } from '@/components/appliance-part-compatibility-manager'
 import { ApplianceLifecycleControls } from '@/components/appliance-lifecycle-controls'
+import { DeleteApplianceDialog } from '@/components/delete-appliance-dialog'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { listCompatibleParts } from '@/lib/data/part-compatibility'
 import { getApplianceDetailById } from '@/lib/data/appliances'
 import { formatDateTime, formatMoney } from '@/lib/format'
 import type { Appliance, ApplianceDimensions } from '@/lib/types/inventory'
@@ -83,6 +86,7 @@ export default async function ApplianceDetailPage({ params }: PageProps) {
   }
 
   const { appliance, images, stateHistory } = detail
+  const compatibleParts = await listCompatibleParts(appliance.id)
 
   return (
     <div className="space-y-8">
@@ -99,6 +103,7 @@ export default async function ApplianceDetailPage({ params }: PageProps) {
             <Button asChild>
               <Link href={`/dashboard/inventory/edit/${appliance.id}`}>Edit</Link>
             </Button>
+            <DeleteApplianceDialog applianceId={appliance.id} variant="destructive" />
           </div>
         }
       />
@@ -173,6 +178,21 @@ export default async function ApplianceDetailPage({ params }: PageProps) {
               <SpecRow key={row.label} label={row.label} value={row.value} />
             ))}
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Compatible parts</CardTitle>
+          <CardDescription>
+            Parts catalog items linked to this appliance
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AppliancePartCompatibilityManager
+            applianceId={appliance.id}
+            linkedParts={compatibleParts}
+          />
         </CardContent>
       </Card>
 

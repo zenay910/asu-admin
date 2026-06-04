@@ -20,12 +20,27 @@ import {
 import { createClient } from '@/lib/supabase/server'
 import type { Appliance } from '@/lib/types/inventory'
 
+const STORAGE_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances'
+
 const INVENTORY_PATHS = [
   '/dashboard',
   '/dashboard/inventory',
   '/dashboard/inventory/view',
   '/dashboard/inventory/new',
 ] as const
+
+function storagePathFromPublicUrl(publicUrl: string): string | null {
+  try {
+    const url = new URL(publicUrl)
+    const prefix = `/storage/v1/object/public/${STORAGE_BUCKET}/`
+    const index = url.pathname.indexOf(prefix)
+    if (index === -1) return null
+    return decodeURIComponent(url.pathname.slice(index + prefix.length))
+  } catch {
+    return null
+  }
+}
 
 function revalidateInventoryPaths(applianceId?: string) {
   for (const path of INVENTORY_PATHS) {
@@ -157,13 +172,26 @@ async function syncImagesFromForm(
   return uploaded
 }
 
+async function deleteStorageByPublicUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  publicUrl: string,
+): Promise<void> {
+  const path = storagePathFromPublicUrl(publicUrl)
+  if (!path) return
+
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([path])
+  if (error) {
+    throw new Error(`Storage delete failed: ${error.message}`)
+  }
+}
+
 async function deleteStorageForAppliance(
   supabase: Awaited<ReturnType<typeof createClient>>,
   applianceId: string,
 ): Promise<void> {
   const prefix = `${applianceId}/original`
   const { data: listed, error: listError } = await supabase.storage
-    .from(process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances')
+    .from(STORAGE_BUCKET)
     .list(`${applianceId}/original`)
 
   if (listError) {
@@ -174,7 +202,7 @@ async function deleteStorageForAppliance(
 
   const paths = listed.map((file) => `${prefix}/${file.name}`)
   const { error: removeError } = await supabase.storage
-    .from(process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances')
+    .from(STORAGE_BUCKET)
     .remove(paths)
 
   if (removeError) {
@@ -257,6 +285,52 @@ export async function updateApplianceDualWrite(
   return { uploadedImages }
 }
 
+/** Remove one image from appliance + product mirror and storage. */
+export async function removeApplianceImageDualWrite(
+  imageId: string,
+): Promise<void> {
+  const { supabase } = await requireAuthUser()
+
+  const { data: imageRow, error: fetchError } = await supabase
+    .from('appliance_images')
+    .select('id, appliance_id, photo_url')
+    .eq('id', imageId)
+    .maybeSingle()
+
+  if (fetchError) {
+    throw new Error(`Failed to load appliance image: ${fetchError.message}`)
+  }
+  if (!imageRow) {
+    throw new Error('Appliance image not found.')
+  }
+
+  const applianceId = String(imageRow.appliance_id)
+  const photoUrl = String(imageRow.photo_url)
+
+  await deleteStorageByPublicUrl(supabase, photoUrl)
+
+  const { error: applianceImageError } = await supabase
+    .from('appliance_images')
+    .delete()
+    .eq('id', imageId)
+  if (applianceImageError) {
+    throw new Error(
+      `Appliance image delete failed: ${applianceImageError.message}`,
+    )
+  }
+
+  const { error: productImageError } = await supabase
+    .from('product_images')
+    .delete()
+    .eq('product_id', applianceId)
+    .eq('photo_url', photoUrl)
+  if (productImageError) {
+    throw new Error(`Product image delete failed: ${productImageError.message}`)
+  }
+
+  revalidateInventoryPaths(applianceId)
+}
+
 /** Delete appliance, mirrored product, images, and storage objects (shared id). */
 export async function deleteApplianceDualWrite(applianceId: string): Promise<void> {
   const { supabase } = await requireAuthUser()
@@ -267,6 +341,26 @@ export async function deleteApplianceDualWrite(applianceId: string): Promise<voi
   }
 
   await deleteStorageForAppliance(supabase, applianceId)
+
+  const { error: productImagesError } = await supabase
+    .from('product_images')
+    .delete()
+    .eq('product_id', applianceId)
+  if (productImagesError) {
+    throw new Error(
+      `Product image cascade delete failed: ${productImagesError.message}`,
+    )
+  }
+
+  const { error: applianceImagesError } = await supabase
+    .from('appliance_images')
+    .delete()
+    .eq('appliance_id', applianceId)
+  if (applianceImagesError) {
+    throw new Error(
+      `Appliance image cascade delete failed: ${applianceImagesError.message}`,
+    )
+  }
 
   const { error: productDeleteError } = await supabase
     .from('products')

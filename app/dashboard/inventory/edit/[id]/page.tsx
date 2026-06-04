@@ -1,7 +1,25 @@
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { DeleteApplianceDialog } from '@/components/delete-appliance-dialog'
+import { PageHeader } from '@/components/page-header'
+import { Button } from '@/components/ui/button'
+import { getApplianceDetailById } from '@/lib/data/appliances'
+import type { Appliance, ApplianceImage } from '@/lib/types/inventory'
 import EditInventoryForm from '../edit-form'
-import { fetchProductById } from '../actions'
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
+
+function formatDimensionsForForm(
+  dimensions: Appliance['dimensions'],
+): string {
+  if (!dimensions) return ''
+  return JSON.stringify(dimensions)
+}
+
+function formatFeaturesForForm(features: Appliance['features']): string {
+  if (!features?.length) return ''
+  return features.join(', ')
+}
 
 export default async function EditInventoryPage({
   params,
@@ -9,29 +27,57 @@ export default async function EditInventoryPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const product = await fetchProductById(id)
+  const detail = await getApplianceDetailById(id)
 
-  if (!product) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
-          Product not found.
-        </div>
-      </div>
-    )
+  if (!detail) {
+    notFound()
   }
 
+  const { appliance, images } = detail
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-          Edit Product
-        </h1>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Update the product details below
-        </p>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <PageHeader
+        title="Edit appliance"
+        description="Updates the appliance and mirrored products row."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/dashboard/inventory/${appliance.id}`}>View</Link>
+            </Button>
+            <DeleteApplianceDialog applianceId={appliance.id} />
+          </div>
+        }
+      />
+
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+        <EditInventoryForm
+          applianceId={appliance.id}
+          lifecycleState={appliance.lifecycle_state}
+          initialAppliance={{
+            title: appliance.title,
+            brand: appliance.brand,
+            price: appliance.price,
+            model_number: appliance.model_number,
+            condition: appliance.condition,
+            status: appliance.status,
+            type: appliance.type,
+            configuration: appliance.configuration,
+            unit_type: appliance.unit_type,
+            fuel: appliance.fuel,
+            color: appliance.color,
+            capacity: appliance.capacity,
+            age: appliance.age,
+            description_long: appliance.description_long,
+            dimensions: formatDimensionsForForm(appliance.dimensions),
+            features: formatFeaturesForForm(appliance.features),
+            appliance_images: images.map((image: ApplianceImage) => ({
+              id: image.id,
+              photo_url: image.photo_url,
+            })),
+          }}
+        />
       </div>
-      <EditInventoryForm productId={id} initialProduct={product} />
     </div>
   )
 }

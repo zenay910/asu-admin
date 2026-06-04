@@ -143,6 +143,12 @@ export async function createRetailInvoice(
 
     const updated = await recomputeInvoiceTotals(invoice.id)
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/invoices')
+    revalidatePath(`/dashboard/invoices/${invoice.id}`)
+    revalidatePath('/dashboard/parts')
+    for (const line of input.parts) {
+      revalidatePath(`/dashboard/parts/${line.partId}`)
+    }
 
     return {
       success: true,

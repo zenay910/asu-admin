@@ -60,6 +60,18 @@ export type JobPart = {
   unit_price: number
 }
 
+/** `job_parts` row with joined part catalog fields for display */
+export type JobPartLine = JobPart & {
+  part_number: string
+  part_name: string
+}
+
+export type JobDetail = {
+  job: Job
+  stateHistory: JobStateHistory[]
+  jobParts: JobPartLine[]
+}
+
 /** Row shape for public.part_stock_movements */
 export type PartStockMovement = {
   id: string

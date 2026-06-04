@@ -1,13 +1,15 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { importProductFromForm } from '../new/form_import.mjs'
+import {
+  deleteApplianceDualWrite,
+  removeApplianceImageDualWrite,
+  updateApplianceDualWrite,
+} from '@/lib/inventory/appliance-dual-write'
 import {
   initialInventoryFormValues,
   type InventoryFormFieldErrors,
   type InventoryFormState,
 } from '../new/types'
-import { createClient } from '@/lib/supabase/server'
 
 const trackedFields = [
   'title',
@@ -35,8 +37,6 @@ function extractValues(formData: FormData) {
     const raw = formData.get(field)
     values[field] = typeof raw === 'string' ? raw : ''
   }
-
-  console.log('Values: ', values)
 
   return values
 }
@@ -89,7 +89,10 @@ function toFriendlyErrorMessage(message: string) {
     return `Please choose a valid ${field}.`
   }
 
-  if (/Product (insert|update) failed:/i.test(message)) {
+  if (
+    /Product (insert|update|mirror) failed:/i.test(message) ||
+    /Appliance/i.test(message)
+  ) {
     return 'We could not save this inventory item. Please review your details and try again.'
   }
 
@@ -99,34 +102,26 @@ function toFriendlyErrorMessage(message: string) {
 export async function updateInventoryItem(
   _prevState: InventoryFormState,
   formData: FormData,
-  productId: string
+  applianceId: string,
 ): Promise<InventoryFormState> {
   const values = extractValues(formData)
 
-  // Get image URLs from form data
-  const imageUrls: string[] = []
-  const imageUrlsArray = formData.getAll('imageUrls')
-  for (const url of imageUrlsArray) {
-    if (typeof url === 'string') {
-      imageUrls.push(url)
-    }
-  }
-
   try {
-    const { uploadedImages } = await importProductFromForm(values, productId, imageUrls)
-
-    // Revalidate the product view page
-    revalidatePath('/dashboard/inventory/view')
+    const { uploadedImages } = await updateApplianceDualWrite(
+      applianceId,
+      formData,
+    )
 
     return {
       error: null,
-      success: `Product updated successfully with ${uploadedImages} new image(s).`,
+      success: `Appliance updated with ${uploadedImages} new image(s).`,
       createdApplianceId: null,
       values: initialInventoryFormValues,
       fieldErrors: {},
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to update inventory item.'
+    const message =
+      error instanceof Error ? error.message : 'Failed to update inventory item.'
 
     return {
       error: toFriendlyErrorMessage(message),
@@ -138,41 +133,10 @@ export async function updateInventoryItem(
   }
 }
 
-export async function fetchProductById(productId: string) {
-  const supabase = await createClient()
+export async function removeApplianceImage(imageId: string): Promise<void> {
+  await removeApplianceImageDualWrite(imageId)
+}
 
-  const { data, error } = await supabase
-    .from('products')
-    .select(`
-      id,
-      title,
-      brand,
-      price,
-      model_number,
-      condition,
-      status,
-      type,
-      configuration,
-      unit_type,
-      fuel,
-      color,
-      capacity,
-      age,
-      dimensions,
-      features,
-      description_long,
-      product_images (
-        id,
-        photo_url
-      )
-    `)
-    .eq('id', productId)
-    .single()
-
-  if (error) {
-    console.error('Error fetching product:', error)
-    return null
-  }
-
-  return data
+export async function deleteInventoryAppliance(applianceId: string): Promise<void> {
+  await deleteApplianceDualWrite(applianceId)
 }

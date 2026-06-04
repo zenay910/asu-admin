@@ -2,20 +2,24 @@ import { Badge, type BadgeProps } from '@/components/ui/badge'
 import type {
   ApplianceStatus,
   LifecycleState,
+  PartStatus,
 } from '@/lib/types/inventory'
 import type {
   InvoiceStatus,
   InvoiceType,
   JobClass,
   JobState,
+  JobType,
 } from '@/lib/types/operations'
 import { cn } from '@/lib/utils'
 
 export type StatusBadgeKind =
   | 'appliance-status'
   | 'lifecycle-state'
+  | 'part-status'
   | 'job-state'
   | 'job-class'
+  | 'job-type'
   | 'invoice-status'
   | 'invoice-type'
 
@@ -42,6 +46,15 @@ const applianceStatusStyles: Record<ApplianceStatus, StyleConfig> = {
     className: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200',
   },
   Archived: { variant: 'outline', className: 'text-muted-foreground' },
+}
+
+const partStatusStyles: Record<PartStatus, StyleConfig> = {
+  Active: {
+    variant: 'outline',
+    className:
+      'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+  },
+  Discontinued: { variant: 'outline', className: 'text-muted-foreground' },
 }
 
 const lifecycleStateStyles: Record<LifecycleState, StyleConfig> = {
@@ -76,6 +89,17 @@ const jobClassStyles: Record<JobClass, StyleConfig> = {
     variant: 'outline',
     className: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-200',
   },
+}
+
+const jobTypeStyles: Record<JobType, StyleConfig> = {
+  Intake: { variant: 'secondary' },
+  Diagnostic: { variant: 'outline' },
+  Repair: { variant: 'outline' },
+  Cleaning: { variant: 'outline' },
+  Delivery: { variant: 'outline' },
+  Installation: { variant: 'outline' },
+  Maintenance: { variant: 'outline' },
+  Warranty: { variant: 'outline' },
 }
 
 const invoiceStatusStyles: Record<InvoiceStatus, StyleConfig> = {
@@ -120,10 +144,14 @@ function resolveStyle(
       return applianceStatusStyles[value as ApplianceStatus]
     case 'lifecycle-state':
       return lifecycleStateStyles[value as LifecycleState]
+    case 'part-status':
+      return partStatusStyles[value as PartStatus]
     case 'job-state':
       return jobStateStyles[value as JobState]
     case 'job-class':
       return jobClassStyles[value as JobClass]
+    case 'job-type':
+      return jobTypeStyles[value as JobType]
     case 'invoice-status':
       return invoiceStatusStyles[value as InvoiceStatus]
     case 'invoice-type':

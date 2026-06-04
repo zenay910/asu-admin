@@ -15,7 +15,7 @@ const ALLOWED = {
   unit_type: new Set(['Individual', 'Set']),
   fuel: new Set(['Electric', 'Gas', '']),
   condition: new Set(['New', 'Good', 'Fair', 'Poor']),
-  status: new Set(['Draft', 'Published', 'Archived']),
+  status: new Set(['Draft', 'Published', 'Archived', 'Sold']),
 };
 
 const norm = (v) => (v ?? '').toString().trim() || null;

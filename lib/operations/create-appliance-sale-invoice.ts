@@ -137,6 +137,9 @@ export async function createApplianceSaleInvoice(
 
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/inventory/view')
+    revalidatePath(`/dashboard/inventory/${input.applianceId}`)
+    revalidatePath('/dashboard/invoices')
+    revalidatePath(`/dashboard/invoices/${invoice.id}`)
 
     return {
       success: true,

@@ -1,9 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { isValidJobTypeForClass } from '@/lib/operations/job-lifecycle'
+import { getApplianceById } from '@/lib/data/appliances'
+import type { Appliance } from '@/lib/types/inventory'
 import type {
   Job,
   JobClass,
+  JobDetail,
+  JobPart,
+  JobPartLine,
   JobState,
+  JobStateHistory,
   JobType,
 } from '@/lib/types/operations'
 
@@ -87,6 +93,123 @@ export async function listJobs(filters: JobListFilters = {}): Promise<Job[]> {
   const { data, error } = await query
   throwOnError(error, 'Failed to list jobs')
   return (data ?? []).map((row) => mapJob(row as Record<string, unknown>))
+}
+
+function mapJobStateHistory(row: Record<string, unknown>): JobStateHistory {
+  return {
+    id: String(row.id),
+    created_at: String(row.created_at),
+    job_id: String(row.job_id),
+    from_state: (row.from_state as JobState | null) ?? null,
+    to_state: row.to_state as JobState,
+    changed_by: row.changed_by != null ? String(row.changed_by) : null,
+    reason: row.reason != null ? String(row.reason) : null,
+  }
+}
+
+function mapJobPart(row: Record<string, unknown>): JobPart {
+  return {
+    id: String(row.id),
+    created_at: String(row.created_at),
+    job_id: String(row.job_id),
+    part_id: String(row.part_id),
+    quantity: Number(row.quantity),
+    unit_price: Number(row.unit_price),
+  }
+}
+
+function nestedPartRow(
+  row: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const nested = row.parts
+  if (nested == null) return null
+  if (Array.isArray(nested)) {
+    const first = nested[0]
+    return first != null ? (first as Record<string, unknown>) : null
+  }
+  return nested as Record<string, unknown>
+}
+
+function mapJobPartLine(row: Record<string, unknown>): JobPartLine | null {
+  const part = mapJobPart(row)
+  const partRow = nestedPartRow(row)
+  if (!partRow) return null
+  return {
+    ...part,
+    part_number: String(partRow.part_number),
+    part_name: String(partRow.name),
+  }
+}
+
+export async function getJobDetailById(id: string): Promise<{
+  detail: JobDetail
+  appliance: Appliance | null
+} | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('jobs')
+    .select(
+      `
+      *,
+      job_state_history (
+        id,
+        created_at,
+        job_id,
+        from_state,
+        to_state,
+        changed_by,
+        reason
+      ),
+      job_parts (
+        id,
+        created_at,
+        job_id,
+        part_id,
+        quantity,
+        unit_price,
+        parts (
+          part_number,
+          name
+        )
+      )
+    `,
+    )
+    .eq('id', id)
+    .maybeSingle()
+
+  throwOnError(error, 'Failed to fetch job detail')
+  if (!data) return null
+
+  const row = data as Record<string, unknown>
+  const rawHistory =
+    (row.job_state_history as Record<string, unknown>[]) ?? []
+  const rawJobParts = (row.job_parts as Record<string, unknown>[]) ?? []
+
+  const stateHistory = rawHistory
+    .map((entry) => mapJobStateHistory(entry))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+
+  const jobParts = rawJobParts
+    .map((entry) => mapJobPartLine(entry))
+    .filter((line): line is JobPartLine => line != null)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+
+  const job = mapJob(
+    Object.fromEntries(
+      Object.entries(row).filter(
+        ([key]) => key !== 'job_state_history' && key !== 'job_parts',
+      ),
+    ) as Record<string, unknown>,
+  )
+
+  const appliance = job.appliance_id
+    ? await getApplianceById(job.appliance_id)
+    : null
+
+  return {
+    detail: { job, stateHistory, jobParts },
+    appliance,
+  }
 }
 
 export async function getJobById(id: string): Promise<Job | null> {

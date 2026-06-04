@@ -1,24 +1,31 @@
 'use client'
 
-import { useActionState, useRef, useState } from 'react'
+import { useActionState, useRef, useState, useTransition } from 'react'
 import { useFormStatus } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { compressImagesForUpload } from '@/lib/images/compress'
-import { uploadImages } from '@/lib/supabase/storage'
-import { updateInventoryItem } from './actions'
-import { initialInventoryFormState, type InventoryFormValues, type InventoryFormState } from '../new/types'
-import { createClient } from '@/lib/supabase/client'
+import type { LifecycleState } from '@/lib/types/inventory'
+import {
+  removeApplianceImage,
+  updateInventoryItem,
+} from './actions'
+import {
+  initialInventoryFormState,
+  type InventoryFormValues,
+  type InventoryFormState,
+} from '../new/types'
 
-type InitialProduct = {
-  id: string
-  title: string | null
-  brand: string | null
-  price: number | string | null
-  model_number: string | null
+type InitialAppliance = {
+  title: string
+  brand: string
+  price: number
+  model_number: string
   condition: string | null
   status: string | null
   type: string | null
@@ -26,36 +33,36 @@ type InitialProduct = {
   unit_type: string | null
   fuel: string | null
   color: string | null
-  capacity: number | string | null
-  age: number | string | null
-  dimensions: string | null
-  features: string | null
+  capacity: number | null
+  age: number | null
+  dimensions: string
+  features: string
   description_long: string | null
-  product_images?: Array<{ id: string; photo_url: string }>
+  appliance_images?: Array<{ id: string; photo_url: string }>
 }
 
-function toInitialValues(product?: InitialProduct): InventoryFormValues {
-  if (!product) {
+function toInitialValues(appliance?: InitialAppliance): InventoryFormValues {
+  if (!appliance) {
     return initialInventoryFormState.values
   }
 
   return {
-    title: product.title || '',
-    brand: product.brand || '',
-    model_number: product.model_number || '',
-    type: product.type || '',
-    configuration: product.configuration || '',
-    unit_type: product.unit_type || '',
-    fuel: product.fuel || '',
-    condition: product.condition || 'Good',
-    status: product.status || 'Draft',
-    price: product.price?.toString() || '',
-    color: product.color || '',
-    capacity: product.capacity?.toString() || '',
-    age: product.age?.toString() || '',
-    dimensions: product.dimensions || '',
-    features: product.features || '',
-    description_long: product.description_long || '',
+    title: appliance.title || '',
+    brand: appliance.brand || '',
+    model_number: appliance.model_number || '',
+    type: appliance.type || '',
+    configuration: appliance.configuration || '',
+    unit_type: appliance.unit_type || '',
+    fuel: appliance.fuel || '',
+    condition: appliance.condition || 'Good',
+    status: appliance.status || 'Draft',
+    price: appliance.price?.toString() || '',
+    color: appliance.color || '',
+    capacity: appliance.capacity?.toString() || '',
+    age: appliance.age?.toString() || '',
+    dimensions: appliance.dimensions || '',
+    features: appliance.features || '',
+    description_long: appliance.description_long || '',
   }
 }
 
@@ -100,38 +107,43 @@ function SubmitButton() {
 
   return (
     <Button type="submit" disabled={pending}>
-      {pending ? 'Updating...' : 'Update Product'}
+      {pending ? 'Updating...' : 'Save changes'}
     </Button>
   )
 }
 
 export default function EditInventoryForm({
-  productId,
-  initialProduct,
+  applianceId,
+  lifecycleState,
+  initialAppliance,
 }: {
-  productId: string
-  initialProduct?: InitialProduct
+  applianceId: string
+  lifecycleState: LifecycleState
+  initialAppliance?: InitialAppliance
 }) {
   const router = useRouter()
-  const initialValues = toInitialValues(initialProduct)
+  const initialValues = toInitialValues(initialAppliance)
   const [state, formAction] = useActionState(
-    (prevState: InventoryFormState, formData: FormData) => updateInventoryItem(prevState, formData, productId),
+    (prevState: InventoryFormState, formData: FormData) =>
+      updateInventoryItem(prevState, formData, applianceId),
     {
       ...initialInventoryFormState,
       values: initialValues,
-    }
+    },
   )
   const [imageFiles, setImageFiles] = useState<File[]>([])
-  const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([])
-  const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>(
+  const [existingImages, setExistingImages] = useState<
+    Array<{ id: string; url: string }>
+  >(
     () =>
-      initialProduct?.product_images?.map((img) => ({
+      initialAppliance?.appliance_images?.map((img) => ({
         id: img.id,
         url: img.photo_url,
-      })) ?? []
+      })) ?? [],
   )
-  const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [removingImageId, setRemovingImageId] = useState<string | null>(null)
+  const [, startRemoveTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,60 +161,42 @@ export default function EditInventoryForm({
     }
   }
 
-  const handleUploadImages = async () => {
-    if (imageFiles.length === 0) {
-      setUploadError('Please select at least one image')
-      return
+  const handleClearImages = () => {
+    setImageFiles([])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
+  }
 
-    setIsUploading(true)
+  const handleRemoveExistingImage = (imageId: string) => {
     setUploadError(null)
-
-    try {
-      const urls = await uploadImages(imageFiles, productId)
-      setUploadedImageUrls([...uploadedImageUrls, ...urls])
-      setImageFiles([])
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
+    setRemovingImageId(imageId)
+    startRemoveTransition(async () => {
+      try {
+        await removeApplianceImage(imageId)
+        setExistingImages((prev) => prev.filter((img) => img.id !== imageId))
+        toast.success('Image removed')
+        router.refresh()
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to remove image'
+        setUploadError(message)
+        toast.error(message)
+      } finally {
+        setRemovingImageId(null)
       }
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : 'Failed to upload images')
-    } finally {
-      setIsUploading(false)
-    }
-  }
-
-  const handleRemoveImage = (index: number) => {
-    setUploadedImageUrls(uploadedImageUrls.filter((_, i) => i !== index))
-  }
-
-  const handleRemoveExistingImage = async (imageId: string) => {
-    try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('product_images')
-        .delete()
-        .eq('id', imageId)
-
-      if (error) {
-        setUploadError('Failed to remove image')
-        return
-      }
-
-      setExistingImages(existingImages.filter((img) => img.id !== imageId))
-    } catch (error) {
-      setUploadError('Failed to remove image')
-      console.error('Error removing image:', error)
-    }
+    })
   }
 
   const handleFormAction = async (formData: FormData) => {
-    // Add uploaded image URLs to the form data
-    uploadedImageUrls.forEach((url) => {
-      formData.append('imageUrls', url)
-    })
+    formData.delete('images')
+    for (const file of imageFiles) {
+      formData.append('images', file)
+    }
     formAction(formData)
   }
+
+  const canPublish = lifecycleState === 'Listed'
 
   return (
     <form action={handleFormAction} className="space-y-5">
@@ -272,11 +266,19 @@ export default function EditInventoryForm({
           <Input
             id="type"
             name="type"
+            list="type-options"
             placeholder="e.g. Washer"
             defaultValue={state.values.type}
             aria-invalid={Boolean(state.fieldErrors.type)}
           />
           <FieldError message={state.fieldErrors.type} />
+          <datalist id="type-options">
+            <option value="Washer" />
+            <option value="Dryer" />
+            <option value="Refrigerator" />
+            <option value="Range" />
+            <option value="Dishwasher" />
+          </datalist>
         </div>
 
         <div className="space-y-2">
@@ -285,7 +287,6 @@ export default function EditInventoryForm({
             id="configuration"
             name="configuration"
             list="configuration-options"
-            placeholder="Front Load"
             defaultValue={state.values.configuration}
             aria-invalid={Boolean(state.fieldErrors.configuration)}
           />
@@ -294,10 +295,6 @@ export default function EditInventoryForm({
             <option value="Front Load" />
             <option value="Top Load" />
             <option value="Stacked Unit" />
-            <option value="Standard" />
-            <option value="Slide-In" />
-            <option value="Glass Cooktop" />
-            <option value="Coil Cooktop" />
           </datalist>
         </div>
       </div>
@@ -309,7 +306,6 @@ export default function EditInventoryForm({
             id="unit_type"
             name="unit_type"
             list="unit-type-options"
-            placeholder="Individual"
             defaultValue={state.values.unit_type}
             aria-invalid={Boolean(state.fieldErrors.unit_type)}
           />
@@ -326,7 +322,6 @@ export default function EditInventoryForm({
             id="fuel"
             name="fuel"
             list="fuel-options"
-            placeholder="Electric"
             defaultValue={state.values.fuel}
             aria-invalid={Boolean(state.fieldErrors.fuel)}
           />
@@ -367,10 +362,16 @@ export default function EditInventoryForm({
             aria-invalid={Boolean(state.fieldErrors.status)}
           />
           <FieldError message={state.fieldErrors.status} />
+          {!canPublish ? (
+            <p className="text-xs text-muted-foreground">
+              Published is available only when lifecycle is Listed.
+            </p>
+          ) : null}
           <datalist id="status-options">
             <option value="Draft" />
-            <option value="Published" />
+            {canPublish ? <option value="Published" /> : null}
             <option value="Archived" />
+            <option value="Sold" />
           </datalist>
         </div>
 
@@ -400,7 +401,6 @@ export default function EditInventoryForm({
           <Input
             id="color"
             name="color"
-            placeholder="e.g. Stainless Steel"
             defaultValue={state.values.color}
             aria-invalid={Boolean(state.fieldErrors.color)}
           />
@@ -415,7 +415,6 @@ export default function EditInventoryForm({
             type="number"
             min="0"
             step="0.1"
-            placeholder="e.g. 4.5"
             defaultValue={state.values.capacity}
             aria-invalid={Boolean(state.fieldErrors.capacity)}
           />
@@ -428,9 +427,7 @@ export default function EditInventoryForm({
             id="age"
             name="age"
             type="number"
-            min="1900"
-            step="1"
-            placeholder="e.g. 2020"
+            min="0"
             defaultValue={state.values.age}
             aria-invalid={Boolean(state.fieldErrors.age)}
           />
@@ -443,7 +440,7 @@ export default function EditInventoryForm({
         <Input
           id="dimensions"
           name="dimensions"
-          placeholder='e.g. 30 x 28 x 66 or {"width_in":30,"depth_in":28,"height_in":66}'
+          placeholder='JSON or W x D x H (e.g. 27 x 30 x 38)'
           defaultValue={state.values.dimensions}
           aria-invalid={Boolean(state.fieldErrors.dimensions)}
         />
@@ -469,7 +466,7 @@ export default function EditInventoryForm({
           id="description_long"
           name="description_long"
           rows={5}
-          placeholder="Detailed product description"
+          placeholder="Detailed description"
           defaultValue={state.values.description_long}
           aria-invalid={Boolean(state.fieldErrors.description_long)}
         />
@@ -478,29 +475,32 @@ export default function EditInventoryForm({
 
       <div className="space-y-2">
         <Label>Images</Label>
-        
-        {/* Existing Images */}
-        {existingImages.length > 0 && (
+
+        {existingImages.length > 0 ? (
           <div className="space-y-2">
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Current images ({existingImages.length}):
+            <p className="text-sm font-medium text-muted-foreground">
+              Current images ({existingImages.length})
             </p>
             <div className="flex flex-wrap gap-2">
               {existingImages.map((img) => (
                 <div
                   key={img.id}
-                  className="relative inline-block rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700"
+                  className="relative inline-block overflow-hidden rounded-md border border-border"
                 >
-                  <img
+                  <Image
                     src={img.url}
-                    alt="Product"
-                    className="w-20 h-20 object-cover"
+                    alt="Appliance"
+                    width={80}
+                    height={80}
+                    unoptimized
+                    className="h-20 w-20 object-cover"
                   />
                   <Button
                     type="button"
                     onClick={() => handleRemoveExistingImage(img.id)}
                     variant="destructive"
                     size="sm"
+                    disabled={removingImageId === img.id}
                     className="absolute right-0 top-0 h-6 rounded-none rounded-bl-md px-2 text-xs"
                   >
                     ×
@@ -509,69 +509,32 @@ export default function EditInventoryForm({
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Upload New Images */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input
             ref={fileInputRef}
             id="images"
-            name="images"
             type="file"
             accept="image/*"
             multiple
             onChange={handleImageSelect}
-            disabled={isUploading}
           />
-          <Button
-            type="button"
-            onClick={handleUploadImages}
-            disabled={isUploading || imageFiles.length === 0}
-            variant="secondary"
-          >
-            {isUploading ? 'Uploading...' : 'Upload Images'}
-          </Button>
+          {imageFiles.length > 0 ? (
+            <Button type="button" variant="ghost" size="sm" onClick={handleClearImages}>
+              Clear selection ({imageFiles.length})
+            </Button>
+          ) : null}
         </div>
-
-        {uploadedImageUrls.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              New images ({uploadedImageUrls.length}):
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {uploadedImageUrls.map((url, index) => (
-                <div
-                  key={index}
-                  className="relative inline-block rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700"
-                >
-                  <img
-                    src={url}
-                    alt={`Preview ${index + 1}`}
-                    className="w-20 h-20 object-cover"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => handleRemoveImage(index)}
-                    variant="destructive"
-                    size="sm"
-                    className="absolute right-0 top-0 h-6 rounded-none rounded-bl-md px-2 text-xs"
-                  >
-                    ×
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <p className="text-xs text-muted-foreground">
+          New photos upload when you save. Removed photos are deleted from both
+          tables and storage.
+        </p>
       </div>
 
-      <div className="flex items-center gap-3 pt-2">
+      <div className="flex flex-wrap items-center gap-3 pt-2">
         <SubmitButton />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.back()}
-        >
+        <Button type="button" variant="outline" onClick={() => router.back()}>
           Cancel
         </Button>
       </div>

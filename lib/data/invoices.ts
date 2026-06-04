@@ -233,6 +233,30 @@ export async function recomputeInvoiceTotals(
   return updated
 }
 
+export async function updateInvoiceStatus(
+  id: string,
+  status: InvoiceStatus,
+  options?: { issued_at?: string | null },
+): Promise<Invoice> {
+  const supabase = await createClient()
+  const payload: { status: InvoiceStatus; issued_at?: string | null } = {
+    status,
+  }
+  if (options && 'issued_at' in options) {
+    payload.issued_at = options.issued_at ?? null
+  }
+
+  const { data, error } = await supabase
+    .from('invoices')
+    .update(payload)
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  throwOnError(error, 'Failed to update invoice status')
+  return mapInvoice(data as Record<string, unknown>)
+}
+
 /** Dev-only accessor smoke test (authenticated server context required). */
 export async function runInvoicesAccessorSmokeTest(): Promise<{
   retailInvoiceId: string

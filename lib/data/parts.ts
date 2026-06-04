@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Part, PartStatus } from '@/lib/types/inventory'
+import type { PartStockMovement } from '@/lib/types/operations'
 
 export type PartListFilters = {
   status?: PartStatus
@@ -24,6 +25,11 @@ export type CreatePartInput = {
 
 export type UpdatePartInput = Partial<CreatePartInput>
 
+export type PartDetail = {
+  part: Part
+  stockMovements: PartStockMovement[]
+}
+
 function mapPart(row: Record<string, unknown>): Part {
   return {
     id: String(row.id),
@@ -47,6 +53,19 @@ function mapPart(row: Record<string, unknown>): Part {
 function throwOnError(error: { message: string } | null, context: string): void {
   if (error) {
     throw new Error(`${context}: ${error.message}`)
+  }
+}
+
+function mapPartStockMovement(row: Record<string, unknown>): PartStockMovement {
+  return {
+    id: String(row.id),
+    created_at: String(row.created_at),
+    part_id: String(row.part_id),
+    job_part_id: row.job_part_id != null ? String(row.job_part_id) : null,
+    delta: Number(row.delta),
+    quantity_after: Number(row.quantity_after),
+    reason: row.reason != null ? String(row.reason) : null,
+    changed_by: row.changed_by != null ? String(row.changed_by) : null,
   }
 }
 
@@ -86,6 +105,29 @@ export async function getPartById(id: string): Promise<Part | null> {
   throwOnError(error, 'Failed to fetch part')
   if (!data) return null
   return mapPart(data as Record<string, unknown>)
+}
+
+export async function listPartStockMovements(
+  partId: string,
+): Promise<PartStockMovement[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('part_stock_movements')
+    .select('*')
+    .eq('part_id', partId)
+    .order('created_at', { ascending: false })
+
+  throwOnError(error, 'Failed to list part stock movements')
+  return (data ?? []).map((row) =>
+    mapPartStockMovement(row as Record<string, unknown>),
+  )
+}
+
+export async function getPartDetailById(id: string): Promise<PartDetail | null> {
+  const part = await getPartById(id)
+  if (!part) return null
+  const stockMovements = await listPartStockMovements(id)
+  return { part, stockMovements }
 }
 
 export async function createPart(input: CreatePartInput): Promise<Part> {

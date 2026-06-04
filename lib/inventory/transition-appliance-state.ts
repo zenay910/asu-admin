@@ -40,18 +40,18 @@ function resolveStatusForTransition(
   let nextStatus =
     requestedStatus !== undefined ? requestedStatus : currentStatus
 
-  if (nextStatus === 'Published' && toState !== 'Listed') {
-    throw new Error(
-      'Published status is only allowed when the appliance is in the Listed lifecycle stage.',
-    )
-  }
-
   if (toState !== 'Listed' && currentStatus === 'Published') {
     nextStatus = toState === 'Retired' ? 'Sold' : 'Draft'
   }
 
   if (fromState === 'Listed' && toState === 'Retired' && nextStatus === 'Published') {
     nextStatus = 'Sold'
+  }
+
+  if (nextStatus === 'Published' && toState !== 'Listed') {
+    throw new Error(
+      'Published status is only allowed when the appliance is in the Listed lifecycle stage.',
+    )
   }
 
   return nextStatus

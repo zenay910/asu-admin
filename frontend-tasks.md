@@ -226,31 +226,31 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
 ## Phase F2 — Parts Inventory & Compatibility
 
 ### F2.1 Parts list page
-- [ ] Add `app/dashboard/parts/page.tsx` via `useParts`: columns (part_number, name, category,
+- [x] Add `app/dashboard/parts/page.tsx` via `useParts`: columns (part_number, name, category,
   quantity_on_hand, reorder_threshold, status), low-stock highlight, filters (status, category,
   brand).
 - **Verify:** lists parts from `/api/parts`; rows where `quantity_on_hand <= reorder_threshold`
   are visibly flagged.
 
 ### F2.2 Part detail page
-- [ ] Add `app/dashboard/parts/[id]/page.tsx`: part fields + compatible appliances
+- [x] Add `app/dashboard/parts/[id]/page.tsx`: part fields + compatible appliances
   (`listCompatibleAppliances`) + `part_stock_movements` history.
 - **Verify:** shows correct data for a seeded part, including its compatibility links and
   movement history.
 
 ### F2.3 New/edit part form
-- [ ] Add create/edit forms posting to `/api/parts` (POST) and the update accessor.
+- [x] Add create/edit forms posting to `/api/parts` (POST) and the update accessor.
 - **Verify:** create returns a `partId` and the part appears in the list; edit persists; a
   duplicate `part_number` surfaces a friendly 400 message (no crash).
 
 ### F2.4 Stock adjustment control
-- [ ] Add an adjust-stock dialog (delta + reason) that writes a `part_stock_movements` row
+- [x] Add an adjust-stock dialog (delta + reason) that writes a `part_stock_movements` row
   (reuse the generalized stock-movement path / `adjustStock`).
 - **Verify:** quantity changes by the delta and a movement row is recorded; an adjustment that
   would go below 0 is rejected with no change.
 
 ### F2.5 Compatibility manager
-- [ ] Add link/unlink UI between a part and appliances (`linkPartToAppliance` / `unlinkPart`).
+- [x] Add link/unlink UI between a part and appliances (`linkPartToAppliance` / `unlinkPart`).
 - **Verify:** a created link appears on both the part and the appliance detail views; a
   duplicate link is rejected; unlink removes it.
 
@@ -259,30 +259,30 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
 ## Phase F3 — Jobs / Work Orders (standardized forms)
 
 ### F3.1 Jobs list page
-- [ ] Add `app/dashboard/jobs/page.tsx` via `useJobs` with **Internal / Customer** tabs, a
+- [x] Add `app/dashboard/jobs/page.tsx` via `useJobs` with **Internal / Customer** tabs, a
   `state` filter, and `job_class`/`job_type`/`state` badges.
 - **Verify:** lists jobs from `/api/jobs`; tab + state filtering narrows results correctly.
 
 ### F3.2 New job form (standardized by type)
-- [ ] Add a create-job form whose fields switch by `job_class` + `job_type` (Internal requires
+- [x] Add a create-job form whose fields switch by `job_class` + `job_type` (Internal requires
   an appliance; Customer optional), capturing the standardized `details` payload; validate the
   class↔type pairing with `isValidJobTypeForClass`; POST `/api/jobs`.
 - **Verify:** valid Internal and Customer jobs are created; an invalid class↔type pair, or an
   Internal job without an appliance, is blocked in the UI **and** rejected by the API (400).
 
 ### F3.3 Job detail page
-- [ ] Add `app/dashboard/jobs/[id]/page.tsx`: summary, state, `job_state_history`, consumed
+- [x] Add `app/dashboard/jobs/[id]/page.tsx`: summary, state, `job_state_history`, consumed
   `job_parts`, and the linked appliance (if any).
 - **Verify:** renders a real job with its ordered history and consumed-parts list.
 
 ### F3.4 Job state transition UI
-- [ ] Add transition controls gated by `canTransitionJob` / `getAllowedJobTransitions`, calling
+- [x] Add transition controls gated by `canTransitionJob` / `getAllowedJobTransitions`, calling
   `transitionJobState` with a reason; toast the result.
 - **Verify:** a valid transition updates `state` and writes one `job_state_history` row;
   disallowed targets are disabled (`Closed` terminal).
 
 ### F3.5 Parts consumption on a job
-- [ ] Add a "consume part" control (pick part + quantity) calling `consumePartsForJob`.
+- [x] Add a "consume part" control (pick part + quantity) calling `consumePartsForJob`.
 - **Verify:** a `job_parts` row is added, `parts.quantity_on_hand` drops by the quantity, and a
   `part_stock_movements` row is written; consuming more than available stock is rejected with no
   change.
@@ -292,40 +292,40 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
 ## Phase F4 — Invoices (job / appliance-sale / retail)
 
 ### F4.1 Invoices list page
-- [ ] Add `app/dashboard/invoices/page.tsx` via `useInvoices`: columns (invoice_number,
+- [x] Add `app/dashboard/invoices/page.tsx` via `useInvoices`: columns (invoice_number,
   invoice_type, status, total) + type/status filters.
 - **Verify:** lists invoices from `/api/invoices`; type and status filters work.
 
 ### F4.2 Invoice detail / print view
-- [ ] Add `app/dashboard/invoices/[id]/page.tsx` rendering `InvoiceWithLineItems`: line items
+- [x] Add `app/dashboard/invoices/[id]/page.tsx` rendering `InvoiceWithLineItems`: line items
   (labor/part/appliance/fee), `subtotal`/`tax`/`total`, `status`, `invoice_number`, and a
   print-friendly layout.
 - **Verify:** renders an invoice with line items and totals where `subtotal = Σ line_total` and
   `total = subtotal + tax`; the print layout is clean.
 
 ### F4.3 Generate invoice from job
-- [ ] Add a "Generate invoice" action on a Customer-job detail calling `generateInvoiceForJob`
+- [x] Add a "Generate invoice" action on a Customer-job detail calling `generateInvoiceForJob`
   (POST `/api/invoices`, `invoice_type='job'`), then link to the new invoice.
 - **Verify:** generating from a Customer job with labor + parts produces a `job` invoice with a
   labor line + one part line per `job_parts` row and correct totals; an Internal/ineligible job
   is rejected.
 
 ### F4.4 Appliance-sale invoice builder
-- [ ] Add a builder (appliance line + delivery/installation `fee` lines + accessory `part`
+- [x] Add a builder (appliance line + delivery/installation `fee` lines + accessory `part`
   lines) calling `createApplianceSaleInvoice`.
 - **Verify:** creates an `appliance_sale` invoice with the correct line kinds and total **and**
   transitions the appliance to `Retired` (`status='Sold'`); selling an already-`Retired`
   appliance is rejected with no invoice created.
 
 ### F4.5 Retail invoice builder
-- [ ] Add a counter-sale builder (parts only, optional `fee` lines) calling
+- [x] Add a counter-sale builder (parts only, optional `fee` lines) calling
   `createRetailInvoice`.
 - **Verify:** creates a `retail` invoice, draws down stock for each part, and writes a
   `part_stock_movements` row with no `job_part`; an oversell is rejected with no invoice/stock
   change.
 
 ### F4.6 Invoice status transitions
-- [ ] Add status controls (Draft → Issued → Paid / Void), setting `issued_at` on Issue.
+- [x] Add status controls (Draft → Issued → Paid / Void), setting `issued_at` on Issue.
 - **Verify:** status updates persist and the badge reflects the new status.
   > Sub-step: if `lib/data/invoices.ts` has no status-update path, add a minimal
   > `updateInvoiceStatus` accessor (+ a thin server action) **first** as its own gated step
@@ -336,13 +336,13 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
 ## Phase F5 — Overview Dashboard
 
 ### F5.1 Stats cards
-- [ ] Replace the placeholder cards in `app/dashboard/page.tsx` with live stats: appliance
+- [x] Replace the placeholder cards in `app/dashboard/page.tsx` with live stats: appliance
   counts by `lifecycle_state`, low-stock parts count, open jobs, draft/issued invoices, and
   revenue (sum of `Issued`/`Paid` invoice totals), via accessors/hooks.
 - **Verify:** each figure matches a direct DB count/sum for the same query.
 
 ### F5.2 Recent activity
-- [ ] Add a recent-activity panel (latest jobs, invoices, and appliance/job state changes).
+- [x] Add a recent-activity panel (latest jobs, invoices, and appliance/job state changes).
 - **Verify:** shows the most recent records ordered by recency.
 
 ---
@@ -350,16 +350,16 @@ primitives are intentionally **not** ported (shadcn `Button`/`Card` own those).
 ## Phase F6 — Polish & QA
 
 ### F6.1 Loading / empty / error states
-- [ ] Ensure every list/detail page has skeletons, empty states, and toasts for errors.
+- [x] Ensure every list/detail page has skeletons, empty states, and toasts for errors.
 - **Verify:** each page handles loading, empty, and error conditions without throwing.
 
 ### F6.2 Responsive + accessibility pass
-- [ ] Review nav, tables, dialogs, and forms for responsiveness and a11y (labels, roles, focus).
+- [x] Review nav, tables, dialogs, and forms for responsiveness and a11y (labels, roles, focus).
 - **Verify:** pages are usable at mobile and desktop widths; interactive controls have
   accessible labels.
 
 ### F6.3 Final gate
-- [ ] Full lint/type/build sweep.
+- [x] Full lint/type/build sweep.
 - **Verify:** `npm run lint` and `next build` pass with no type errors.
 
 ---

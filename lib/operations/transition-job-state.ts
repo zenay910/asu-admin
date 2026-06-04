@@ -83,6 +83,8 @@ export async function transitionJobState(
   }
 
   revalidatePath('/dashboard')
+  revalidatePath('/dashboard/jobs')
+  revalidatePath(`/dashboard/jobs/${jobId}`)
 
   const job = await getJobById(jobId)
   if (!job) {

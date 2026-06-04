@@ -4,15 +4,10 @@ import { createClient } from './client'
 
 const BUCKET = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances'
 
-interface UploadImageOptions {
-  onProgress?: (progress: number) => void
-}
-
 export async function uploadImageToStorage(
   file: File,
   productId: string,
   index: number,
-  options: UploadImageOptions = {}
 ): Promise<string> {
   const supabase = createClient()
 
@@ -44,8 +39,9 @@ export async function uploadImages(
   const publicUrls: string[] = []
 
   for (let i = 0; i < files.length; i++) {
-    const url = await uploadImageToStorage(files[i], productId, i, { onProgress })
+    const url = await uploadImageToStorage(files[i], productId, i)
     publicUrls.push(url)
+    onProgress?.(((i + 1) / files.length) * 100)
   }
 
   return publicUrls

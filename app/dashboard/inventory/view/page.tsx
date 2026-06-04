@@ -3,22 +3,18 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { DataTable } from '@/components/data-table'
+import { FilterSelect } from '@/components/filter-select'
 import { HoverImagePreview } from '@/components/hover-image-preview'
+import { ListTableSkeleton } from '@/components/list-table-skeleton'
+import { PageErrorAlert } from '@/components/page-error-alert'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
   useAppliances,
   type ApplianceListFilters,
 } from '@/lib/hooks/use-appliances'
+import { useFetchErrorToast } from '@/lib/hooks/use-fetch-error-toast'
 import { LIFECYCLE_STATES } from '@/lib/inventory/lifecycle'
 import { formatMoney } from '@/lib/format'
 import type { Appliance, ApplianceStatus } from '@/lib/types/inventory'
@@ -51,16 +47,6 @@ function buildHookFilters(state: {
   if (state.brand !== ALL) filters.brand = state.brand
   if (state.type !== ALL) filters.type = state.type
   return filters
-}
-
-function TableSkeleton() {
-  return (
-    <div className="space-y-2 rounded-md border border-border p-4">
-      {Array.from({ length: 8 }).map((_, index) => (
-        <Skeleton key={index} className="h-14 w-full" />
-      ))}
-    </div>
-  )
 }
 
 function ApplianceThumbnail({
@@ -102,7 +88,11 @@ export default function InventoryListPage() {
   )
 
   const { appliances, loading, error } = useAppliances(hookFilters)
-  const { appliances: allAppliances } = useAppliances({})
+  const { appliances: allAppliances, error: allAppliancesError } =
+    useAppliances({})
+
+  useFetchErrorToast(error, 'Inventory list')
+  useFetchErrorToast(allAppliancesError, 'Inventory filters')
 
   const brandOptions = useMemo(() => {
     const brands = new Set(
@@ -195,16 +185,13 @@ export default function InventoryListPage() {
         ) : null}
       </div>
 
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <PageErrorAlert message={error} /> : null}
 
       {loading ? (
-        <TableSkeleton />
+        <ListTableSkeleton />
       ) : (
         <DataTable
+          ariaLabel="Appliances inventory"
           data={appliances}
           getRowKey={(row) => row.id}
           emptyMessage="No appliances match the current filters."
@@ -274,36 +261,6 @@ export default function InventoryListPage() {
           ]}
         />
       )}
-    </div>
-  )
-}
-
-function FilterSelect({
-  label,
-  value,
-  onValueChange,
-  options,
-}: {
-  label: string
-  value: string
-  onValueChange: (value: string) => void
-  options: Array<{ value: string; label: string }>
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label className="type-label text-muted-foreground">{label}</label>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger>
-          <SelectValue placeholder={`All ${label.toLowerCase()}`} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   )
 }

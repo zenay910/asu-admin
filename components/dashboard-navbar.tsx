@@ -23,7 +23,10 @@ export default function DashboardNavbar() {
   const pathname = usePathname()
 
   return (
-    <nav aria-label="Dashboard navigation" className="flex flex-wrap items-center gap-2">
+    <nav
+      aria-label="Dashboard navigation"
+      className="flex flex-wrap items-center gap-1 sm:gap-2"
+    >
       {navItems.map((item) => {
         const isActive = isNavActive(pathname, item.href)
 
@@ -33,7 +36,7 @@ export default function DashboardNavbar() {
             href={item.href}
             aria-current={isActive ? 'page' : undefined}
             className={cn(
-              'rounded-md px-3 py-2 text-sm font-medium transition-all duration-150',
+              'rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-150 min-h-11 inline-flex items-center',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               isActive
                 ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 active:bg-primary/80 active:shadow-none'
