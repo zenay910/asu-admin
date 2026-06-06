@@ -9,6 +9,7 @@ import {
   type ApplianceSaleAccessoryPayload,
   type ApplianceSaleFeePayload,
 } from '@/app/dashboard/invoices/actions'
+import { CustomerPicker } from '@/components/customer-picker'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -500,16 +501,12 @@ export function ApplianceSaleInvoiceForm() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="sale-customer">Customer ID (optional)</Label>
-          <Input
-            id="sale-customer"
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            placeholder="UUID when customers exist"
-            disabled={pending}
-          />
-        </div>
+        <CustomerPicker
+          id="sale-customer"
+          value={customerId}
+          onChange={setCustomerId}
+          disabled={pending}
+        />
         <div className="space-y-2">
           <Label htmlFor="sale-tax">Tax</Label>
           <Input

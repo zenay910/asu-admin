@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { DashboardRecentActivity } from '@/app/dashboard/dashboard-recent-activity'
+import { DashboardFinancialCards } from '@/app/dashboard/dashboard-financial-cards'
 import { DashboardStatsCards } from '@/app/dashboard/dashboard-stats-cards'
 import {
   Card,
@@ -21,7 +22,7 @@ const sections = [
   {
     title: 'Inventory',
     description: 'Appliances, lifecycle states, and storefront parity.',
-    href: '/dashboard/inventory',
+    href: '/dashboard/inventory/view',
     icon: Package,
   },
   {
@@ -52,10 +53,6 @@ export default function Dashboard() {
         description="Operational metrics and quick links."
       />
 
-      <DashboardStatsCards />
-
-      <DashboardRecentActivity />
-
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-foreground">Areas</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -81,6 +78,13 @@ export default function Dashboard() {
           })}
         </div>
       </div>
+
+      <DashboardStatsCards />
+
+      <DashboardFinancialCards />
+
+      <DashboardRecentActivity />
+
     </div>
   )
 }

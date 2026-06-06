@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { isValidJobTypeForClass } from '@/lib/operations/job-lifecycle'
 import { getApplianceById } from '@/lib/data/appliances'
+import { assertCustomerExists } from '@/lib/data/customers'
 import type { Appliance } from '@/lib/types/inventory'
 import type {
   Job,
@@ -227,6 +228,7 @@ export async function getJobById(id: string): Promise<Job | null> {
 
 export async function createJob(input: CreateJobInput): Promise<Job> {
   validateJobFields(input.job_class, input.job_type, input.appliance_id)
+  await assertCustomerExists(input.customer_id)
 
   const supabase = await createClient()
   const payload = {
@@ -262,6 +264,9 @@ export async function updateJob(id: string, input: UpdateJobInput): Promise<Job>
     input.appliance_id !== undefined ? input.appliance_id : current.appliance_id
 
   validateJobFields(jobClass, jobType, applianceId)
+  if (input.customer_id !== undefined) {
+    await assertCustomerExists(input.customer_id)
+  }
 
   const supabase = await createClient()
   const { data, error } = await supabase

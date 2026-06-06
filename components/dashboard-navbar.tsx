@@ -6,9 +6,10 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { label: 'Overview', href: '/dashboard' },
-  { label: 'Inventory', href: '/dashboard/inventory' },
+  { label: 'Inventory', href: '/dashboard/inventory/view' },
   { label: 'Parts', href: '/dashboard/parts' },
   { label: 'Jobs', href: '/dashboard/jobs' },
+  { label: 'Customers', href: '/dashboard/customers' },
   { label: 'Invoices', href: '/dashboard/invoices' },
 ] as const
 

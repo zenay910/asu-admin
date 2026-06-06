@@ -1,3 +1,4 @@
+import { assertCustomerExists } from '@/lib/data/customers'
 import { createClient } from '@/lib/supabase/server'
 import type {
   Invoice,
@@ -21,6 +22,10 @@ export type CreateInvoiceInput = {
   status?: InvoiceStatus
   tax?: number
   issued_at?: string | null
+}
+
+export type UpdateInvoiceInput = {
+  customer_id?: string | null
 }
 
 export type AddLineItemInput = {
@@ -154,6 +159,7 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
   const jobId = input.job_id ?? null
   const applianceId = input.appliance_id ?? null
   validateInvoiceSource(input.invoice_type, jobId, applianceId)
+  await assertCustomerExists(input.customer_id)
 
   const supabase = await createClient()
   const payload = {
@@ -231,6 +237,31 @@ export async function recomputeInvoiceTotals(
     throw new Error('Invoice not found after recompute')
   }
   return updated
+}
+
+export async function updateInvoice(
+  id: string,
+  input: UpdateInvoiceInput,
+): Promise<Invoice> {
+  const current = await getInvoiceById(id)
+  if (!current) {
+    throw new Error('Invoice not found')
+  }
+
+  if (input.customer_id !== undefined) {
+    await assertCustomerExists(input.customer_id)
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('invoices')
+    .update(input)
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  throwOnError(error, 'Failed to update invoice')
+  return mapInvoice(data as Record<string, unknown>)
 }
 
 export async function updateInvoiceStatus(

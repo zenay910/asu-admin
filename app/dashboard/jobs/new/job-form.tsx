@@ -6,6 +6,7 @@ import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { createJobItem } from '../actions'
 import { initialJobFormState, type JobFormValues } from '../types'
+import { CustomerPicker } from '@/components/customer-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -72,7 +73,8 @@ export default function JobForm() {
       ...prev,
       job_class,
       job_type: types.includes(prev.job_type) ? prev.job_type : types[0],
-      appliance_id: job_class === 'Customer' ? prev.appliance_id : prev.appliance_id,
+      appliance_id: prev.appliance_id,
+      customer_id: job_class === 'Internal' ? '' : prev.customer_id,
     }))
   }
 
@@ -183,20 +185,15 @@ export default function JobForm() {
       </div>
 
       {values.job_class === 'Customer' ? (
-        <div className="space-y-2">
-          <Label htmlFor="customer_id">Customer ID (optional)</Label>
-          <Input
-            id="customer_id"
-            name="customer_id"
-            placeholder="UUID when customer records exist"
-            value={values.customer_id}
-            onChange={(e) =>
-              setValues((prev) => ({ ...prev, customer_id: e.target.value }))
-            }
-          />
-        </div>
+        <CustomerPicker
+          name="customer_id"
+          value={values.customer_id}
+          onChange={(customer_id) =>
+            setValues((prev) => ({ ...prev, customer_id }))
+          }
+        />
       ) : (
-        <input type="hidden" name="customer_id" value={values.customer_id} />
+        <input type="hidden" name="customer_id" value="" />
       )}
 
       <div className="space-y-2">
