@@ -18,7 +18,11 @@ import {
   resolveApplianceStatus,
 } from '@/lib/inventory/appliance-product-mirror'
 import { createClient } from '@/lib/supabase/server'
-import type { Appliance } from '@/lib/types/inventory'
+import type { Appliance, LifecycleState } from '@/lib/types/inventory'
+
+export type CreateApplianceDualWriteOptions = {
+  lifecycle_state?: LifecycleState
+}
 
 const STORAGE_BUCKET =
   process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'appliances'
@@ -216,10 +220,11 @@ async function deleteStorageForAppliance(
  */
 export async function createApplianceDualWrite(
   formData: FormData,
+  options: CreateApplianceDualWriteOptions = {},
 ): Promise<{ applianceId: string; uploadedImages: number }> {
   const { supabase } = await requireAuthUser()
   const productPayload = buildProductPayload(formData)
-  const lifecycle_state = 'Intake' as const
+  const lifecycle_state = options.lifecycle_state ?? 'Intake'
   const status = resolveApplianceStatus(lifecycle_state, productPayload.status)
 
   let applianceId: string | null = null

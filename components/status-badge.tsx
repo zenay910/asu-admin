@@ -12,6 +12,7 @@ import type {
   JobType,
 } from '@/lib/types/operations'
 import { cn } from '@/lib/utils'
+import type { RefurbishmentStatus } from '@/lib/types/refurbishment'
 
 export type StatusBadgeKind =
   | 'appliance-status'
@@ -22,6 +23,7 @@ export type StatusBadgeKind =
   | 'job-type'
   | 'invoice-status'
   | 'invoice-type'
+  | 'refurbishment-status'
 
 type StatusBadgeProps = {
   kind: StatusBadgeKind
@@ -135,6 +137,38 @@ const invoiceTypeStyles: Record<InvoiceType, StyleConfig> = {
   },
 }
 
+const refurbishmentStatusLabels: Record<RefurbishmentStatus, string> = {
+  staging: 'Staging',
+  diagnostic: 'Diagnostic',
+  repair: 'Repair',
+  testing: 'Testing',
+  completed: 'Completed',
+}
+
+const refurbishmentStatusStyles: Record<RefurbishmentStatus, StyleConfig> = {
+  staging: { variant: 'secondary', label: refurbishmentStatusLabels.staging },
+  diagnostic: {
+    variant: 'outline',
+    className: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200',
+    label: refurbishmentStatusLabels.diagnostic,
+  },
+  repair: {
+    variant: 'outline',
+    className: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200',
+    label: refurbishmentStatusLabels.repair,
+  },
+  testing: {
+    variant: 'outline',
+    className: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-200',
+    label: refurbishmentStatusLabels.testing,
+  },
+  completed: {
+    variant: 'outline',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+    label: refurbishmentStatusLabels.completed,
+  },
+}
+
 function resolveStyle(
   kind: StatusBadgeKind,
   value: string,
@@ -156,6 +190,8 @@ function resolveStyle(
       return invoiceStatusStyles[value as InvoiceStatus]
     case 'invoice-type':
       return invoiceTypeStyles[value as InvoiceType]
+    case 'refurbishment-status':
+      return refurbishmentStatusStyles[value as RefurbishmentStatus]
     default:
       return undefined
   }

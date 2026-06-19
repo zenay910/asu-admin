@@ -62,6 +62,10 @@ function mapPartStockMovement(row: Record<string, unknown>): PartStockMovement {
     created_at: String(row.created_at),
     part_id: String(row.part_id),
     job_part_id: row.job_part_id != null ? String(row.job_part_id) : null,
+    refurbishment_part_id:
+      row.refurbishment_part_id != null
+        ? String(row.refurbishment_part_id)
+        : null,
     delta: Number(row.delta),
     quantity_after: Number(row.quantity_after),
     reason: row.reason != null ? String(row.reason) : null,
@@ -188,6 +192,7 @@ export async function adjustStock(id: string, delta: number): Promise<Part> {
 export type RecordStockMovementOptions = {
   reason?: string | null
   jobPartId?: string | null
+  refurbishmentPartId?: string | null
   changedBy?: string | null
 }
 
@@ -215,6 +220,7 @@ export async function recordStockMovement(
     .insert({
       part_id: partId,
       job_part_id: options.jobPartId ?? null,
+      refurbishment_part_id: options.refurbishmentPartId ?? null,
       delta,
       quantity_after: adjusted.quantity_on_hand,
       reason: options.reason ?? null,

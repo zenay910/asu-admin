@@ -78,6 +78,7 @@ export type PartStockMovement = {
   created_at: string
   part_id: string
   job_part_id: string | null
+  refurbishment_part_id: string | null
   delta: number
   quantity_after: number
   reason: string | null
