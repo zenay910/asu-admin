@@ -36,15 +36,15 @@ export function canAdvance(
 }
 
 /** Modal stepper stages (staging maps to diagnostic). */
-export const REPAIR_WORKFLOW_STATUSES: readonly RefurbishmentStatus[] = [
+export const REPAIR_WORKFLOW_STATUSES = [
   'diagnostic',
   'repair',
   'testing',
-]
+] as const satisfies readonly RefurbishmentStatus[]
 
 export function repairWorkflowStepIndex(status: RefurbishmentStatus): number {
   if (status === 'staging') return 0
+  if (status === 'completed') return REPAIR_WORKFLOW_STATUSES.length - 1
   const index = REPAIR_WORKFLOW_STATUSES.indexOf(status)
-  if (index >= 0) return index
-  return REPAIR_WORKFLOW_STATUSES.length - 1
+  return index >= 0 ? index : REPAIR_WORKFLOW_STATUSES.length - 1
 }

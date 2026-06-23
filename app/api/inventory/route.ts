@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createApplianceDualWrite } from '@/lib/inventory/appliance-dual-write';
 
-// Configure API route to accept larger payloads
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '6mb',
-    },
-  },
-};
-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
