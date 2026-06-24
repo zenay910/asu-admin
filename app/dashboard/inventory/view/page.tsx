@@ -127,9 +127,14 @@ export default function InventoryListPage() {
         title="Inventory"
         description="Appliances from the catalog (source of truth: appliances table)."
         actions={
-          <Button asChild>
-            <Link href="/dashboard/inventory/new">Add appliance</Link>
-          </Button>
+          <>
+            <Button asChild variant="outline">
+              <Link href="/dashboard/inventory/new/set">New set</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/dashboard/inventory/new">Add appliance</Link>
+            </Button>
+          </>
         }
       />
 

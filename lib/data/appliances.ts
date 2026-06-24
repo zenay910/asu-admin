@@ -188,17 +188,27 @@ export async function getApplianceDetailById(
     .map((entry) => mapApplianceStateHistory(entry))
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
 
+  const appliance = mapAppliance(
+    Object.fromEntries(
+      Object.entries(row).filter(
+        ([key]) =>
+          key !== 'appliance_images' && key !== 'appliance_state_history',
+      ),
+    ) as Record<string, unknown>,
+  )
+
+  const setMembers =
+    appliance.unit_type === 'Set'
+      ? await (
+          await import('@/lib/data/appliance-set-members')
+        ).getSetMembers(id)
+      : []
+
   return {
-    appliance: mapAppliance(
-      Object.fromEntries(
-        Object.entries(row).filter(
-          ([key]) =>
-            key !== 'appliance_images' && key !== 'appliance_state_history',
-        ),
-      ) as Record<string, unknown>,
-    ),
+    appliance,
     images,
     stateHistory,
+    setMembers,
   }
 }
 

@@ -17,7 +17,11 @@ import {
 import { listCompatibleParts } from '@/lib/data/part-compatibility'
 import { getApplianceDetailById } from '@/lib/data/appliances'
 import { formatDateTime, formatMoney } from '@/lib/format'
-import type { Appliance, ApplianceDimensions } from '@/lib/types/inventory'
+import type {
+  Appliance,
+  ApplianceDimensions,
+  ApplianceSetMemberDetail,
+} from '@/lib/types/inventory'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,7 +54,46 @@ function SpecRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function buildSpecRows(appliance: Appliance): Array<{ label: string; value: string }> {
+function buildMemberSpecRows(
+  member: ApplianceSetMemberDetail,
+): Array<{ label: string; value: string }> {
+  const { appliance } = member
+  return [
+    { label: 'Brand', value: appliance.brand || '—' },
+    { label: 'Model', value: appliance.model_number || '—' },
+    { label: 'Type', value: appliance.type || '—' },
+    { label: 'Configuration', value: appliance.configuration || '—' },
+    { label: 'Fuel', value: appliance.fuel || '—' },
+    {
+      label: 'Capacity',
+      value: appliance.capacity != null ? String(appliance.capacity) : '—',
+    },
+    {
+      label: 'Age',
+      value: appliance.age != null ? `${appliance.age} yr` : '—',
+    },
+    { label: 'Dimensions', value: formatDimensions(appliance.dimensions) },
+  ]
+}
+
+function buildSpecRows(
+  appliance: Appliance,
+  isSet: boolean,
+): Array<{ label: string; value: string }> {
+  if (isSet) {
+    return [
+      { label: 'Brand', value: appliance.brand || '—' },
+      { label: 'Unit type', value: appliance.unit_type || '—' },
+      { label: 'Condition', value: appliance.condition || '—' },
+      { label: 'Color', value: appliance.color || '—' },
+      { label: 'Features', value: formatFeatures(appliance.features) },
+      { label: 'Price', value: formatMoney(appliance.price) },
+      { label: 'Created', value: formatDateTime(appliance.created_at) },
+      { label: 'Updated', value: formatDateTime(appliance.updated_at) },
+      { label: 'ID', value: appliance.id },
+    ]
+  }
+
   return [
     { label: 'Brand', value: appliance.brand || '—' },
     { label: 'Model', value: appliance.model_number || '—' },
@@ -85,16 +128,20 @@ export default async function ApplianceDetailPage({ params }: PageProps) {
     notFound()
   }
 
-  const { appliance, images, stateHistory } = detail
+  const { appliance, images, stateHistory, setMembers } = detail
   const compatibleParts = await listCompatibleParts(appliance.id)
+  const isSet = appliance.unit_type === 'Set'
+  const setDescription = isSet
+    ? [appliance.brand, `${setMembers.length} linked machines`]
+        .filter(Boolean)
+        .join(' · ')
+    : [appliance.brand, appliance.model_number].filter(Boolean).join(' · ')
 
   return (
     <div className="space-y-8">
       <PageHeader
         title={appliance.title || appliance.model_number || 'Appliance'}
-        description={[appliance.brand, appliance.model_number]
-          .filter(Boolean)
-          .join(' · ')}
+        description={setDescription}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" asChild>
@@ -171,15 +218,80 @@ export default async function ApplianceDetailPage({ params }: PageProps) {
       <Card>
         <CardHeader>
           <CardTitle>Specifications</CardTitle>
+          {isSet ? (
+            <CardDescription>
+              Set-level listing details. Linked machines are listed below.
+            </CardDescription>
+          ) : null}
         </CardHeader>
         <CardContent>
           <dl>
-            {buildSpecRows(appliance).map((row) => (
+            {buildSpecRows(appliance, isSet).map((row) => (
               <SpecRow key={row.label} label={row.label} value={row.value} />
             ))}
           </dl>
         </CardContent>
       </Card>
+
+      {isSet && setMembers.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Set components</CardTitle>
+            <CardDescription>
+              {setMembers.length} linked machine{setMembers.length === 1 ? '' : 's'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {setMembers.map((member) => (
+              <div
+                key={member.member.id}
+                className="rounded-lg border border-border bg-muted/20 p-4"
+              >
+                <div className="mb-4 flex items-start gap-3">
+                  {member.primary_image_url ? (
+                    <Image
+                      src={member.primary_image_url}
+                      alt={member.appliance.title}
+                      width={72}
+                      height={72}
+                      unoptimized
+                      className="h-[72px] w-[72px] rounded object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-[72px] w-[72px] items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                      No photo
+                    </div>
+                  )}
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium text-foreground">
+                      {member.appliance.title}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {[member.appliance.brand, member.appliance.model_number]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                    <Button asChild variant="link" className="h-auto p-0">
+                      <Link href={`/dashboard/inventory/${member.appliance.id}`}>
+                        View machine
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+                <dl>
+                  {buildMemberSpecRows(member).map((row) => (
+                    <SpecRow
+                      key={`${member.member.id}-${row.label}`}
+                      label={row.label}
+                      value={row.value}
+                    />
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

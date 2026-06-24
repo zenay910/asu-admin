@@ -13,6 +13,9 @@ export default function InventorySectionPage() {
             <Button variant="outline" asChild>
               <Link href="/dashboard/inventory/view">View inventory</Link>
             </Button>
+            <Button variant="outline" asChild>
+              <Link href="/dashboard/inventory/new/set">New set</Link>
+            </Button>
             <Button asChild>
               <Link href="/dashboard/inventory/new">Add appliance</Link>
             </Button>

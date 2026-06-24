@@ -524,7 +524,6 @@ export default function InventoryForm() {
           <FieldError message={state.fieldErrors.unit_type} />
           <datalist id="unit-type-options">
             <option value="Individual" />
-            <option value="Set" />
           </datalist>
         </div>
 

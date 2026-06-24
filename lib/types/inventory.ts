@@ -57,6 +57,22 @@ export type Appliance = {
   age: number | null
 }
 
+/** Row shape for public.appliance_set_members */
+export type ApplianceSetMember = {
+  id: string
+  created_at: string
+  set_appliance_id: string
+  member_appliance_id: string
+  sort_order: number
+}
+
+/** Set member with joined appliance row for display */
+export type ApplianceSetMemberDetail = {
+  member: ApplianceSetMember
+  appliance: Appliance
+  primary_image_url: string | null
+}
+
 /** Row shape for public.appliance_images */
 export type ApplianceImage = {
   id: string
@@ -81,6 +97,7 @@ export type ApplianceDetail = {
   appliance: Appliance
   images: ApplianceImage[]
   stateHistory: ApplianceStateHistory[]
+  setMembers: ApplianceSetMemberDetail[]
 }
 
 /** Row shape for public.parts */
