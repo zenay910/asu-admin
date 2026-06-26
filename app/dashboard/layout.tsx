@@ -24,7 +24,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/80 backdrop-blur print:hidden">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:px-8">

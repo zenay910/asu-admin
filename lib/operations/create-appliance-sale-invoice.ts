@@ -23,11 +23,22 @@ export type ApplianceSaleAccessoryInput = {
   unitPrice?: number
 }
 
+export type ApplianceSaleDiscountInput = {
+  description: string
+  amount: number
+}
+
+export type ApplianceSaleTradeInInput = {
+  description: string
+  amount: number
+}
+
 export type CreateApplianceSaleInvoiceInput = {
   applianceId: string
   fees?: ApplianceSaleFeeInput[]
   accessories?: ApplianceSaleAccessoryInput[]
-  tax?: number
+  discounts?: ApplianceSaleDiscountInput[]
+  tradeIns?: ApplianceSaleTradeInInput[]
   customerId?: string | null
 }
 
@@ -73,7 +84,7 @@ export async function createApplianceSaleInvoice(
       invoice_type: 'appliance_sale',
       appliance_id: input.applianceId,
       customer_id: input.customerId ?? null,
-      tax: input.tax ?? 0,
+      tax: 0,
     })
     invoiceId = invoice.id
 
@@ -109,11 +120,30 @@ export async function createApplianceSaleInvoice(
       })
     }
 
+    for (const discount of input.discounts ?? []) {
+      await addLineItem(invoice.id, {
+        kind: 'discount',
+        description: discount.description,
+        quantity: 1,
+        unit_price: -discount.amount,
+      })
+    }
+
+    for (const tradeIn of input.tradeIns ?? []) {
+      await addLineItem(invoice.id, {
+        kind: 'trade_in',
+        description: tradeIn.description,
+        quantity: 1,
+        unit_price: -tradeIn.amount,
+      })
+    }
+
     const updated = await recomputeInvoiceTotals(invoice.id)
 
     const transitioned = await transitionApplianceState(
       input.applianceId,
       'Retired',
+      { status:'Sold' },
     )
     if (!transitioned.success) {
       await deleteInvoice(invoice.id)
@@ -193,6 +223,11 @@ export async function runCreateApplianceSaleInvoiceSmokeTest(): Promise<{
       { partId: partA.id, quantity: 1 },
       { partId: partB.id, quantity: 2 },
     ],
+    discounts: [{ description: 'Washer markdown', amount: 29 }],
+    tradeIns: [
+      { description: 'Old washer trade-in', amount: 30 },
+      { description: 'Old dryer trade-in', amount: 30 },
+    ],
   })
   if (!sold.success) {
     throw new Error(`Expected sale to succeed: ${sold.error}`)
@@ -200,11 +235,23 @@ export async function runCreateApplianceSaleInvoiceSmokeTest(): Promise<{
 
   const invoice = sold.invoice
   const kinds = invoice.line_items.map((line) => line.kind).sort()
-  if (kinds.join(',') !== 'appliance,fee,part,part') {
+  if (kinds.join(',') !== 'appliance,discount,fee,part,part,trade_in,trade_in') {
     throw new Error(`Unexpected line kinds: ${kinds.join(',')}`)
   }
 
-  const expectedSubtotal = 500 + 50 + 25 + 2 * 15
+  const discountLine = invoice.line_items.find((line) => line.kind === 'discount')
+  if (!discountLine || discountLine.line_total !== -29) {
+    throw new Error('Expected discount line with line_total -29')
+  }
+
+  const tradeInTotal = invoice.line_items
+    .filter((line) => line.kind === 'trade_in')
+    .reduce((sum, line) => sum + line.line_total, 0)
+  if (tradeInTotal !== -60) {
+    throw new Error(`Expected trade-in lines totaling -60, got ${tradeInTotal}`)
+  }
+
+  const expectedSubtotal = 500 + 50 + 25 + 2 * 15 - 29 - 60
   if (invoice.subtotal !== expectedSubtotal) {
     throw new Error(
       `Expected subtotal ${expectedSubtotal}, got ${invoice.subtotal}`,

@@ -22,7 +22,13 @@ export type InvoiceType = 'job' | 'appliance_sale' | 'retail'
 export type InvoiceStatus = 'Draft' | 'Issued' | 'Paid' | 'Void'
 
 /** Matches `invoice_line_items_kind_check` on public.invoice_line_items */
-export type LineItemKind = 'labor' | 'part' | 'appliance' | 'fee'
+export type LineItemKind =
+  | 'labor'
+  | 'part'
+  | 'appliance'
+  | 'fee'
+  | 'discount'
+  | 'trade_in'
 
 /** Row shape for public.jobs */
 export type Job = {

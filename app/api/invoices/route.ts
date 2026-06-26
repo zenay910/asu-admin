@@ -80,6 +80,42 @@ function parseFees(
   return { ok: true, fees }
 }
 
+function parseReductions(
+  raw: unknown,
+  label: string,
+): {
+  ok: true
+  reductions: { description: string; amount: number }[]
+} | { ok: false; error: string } {
+  if (raw === undefined) {
+    return { ok: true, reductions: [] }
+  }
+  if (!Array.isArray(raw)) {
+    return { ok: false, error: `${label} must be an array` }
+  }
+  const reductions: { description: string; amount: number }[] = []
+  for (const item of raw) {
+    if (item == null || typeof item !== 'object') {
+      return { ok: false, error: `Each ${label} line must be an object` }
+    }
+    const row = item as Record<string, unknown>
+    const description =
+      typeof row.description === 'string' ? row.description.trim() : ''
+    const amount = Number(row.amount)
+    if (!description) {
+      return { ok: false, error: `Each ${label} line requires a description` }
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return {
+        ok: false,
+        error: `Each ${label} line requires a positive numeric amount`,
+      }
+    }
+    reductions.push({ description, amount })
+  }
+  return { ok: true, reductions }
+}
+
 function parseRetailParts(
   raw: unknown,
 ): {
@@ -227,6 +263,16 @@ async function dispatchCreate(
     if (!accessoriesParsed.ok) {
       return { ok: false, error: accessoriesParsed.error }
     }
+    const discountsParsed = parseReductions(body.discounts, 'discounts')
+    if (!discountsParsed.ok) {
+      return { ok: false, error: discountsParsed.error }
+    }
+    const tradeInsRaw =
+      body.trade_ins !== undefined ? body.trade_ins : body.tradeIns
+    const tradeInsParsed = parseReductions(tradeInsRaw, 'trade_ins')
+    if (!tradeInsParsed.ok) {
+      return { ok: false, error: tradeInsParsed.error }
+    }
 
     const customer_id =
       body.customer_id === undefined
@@ -239,7 +285,8 @@ async function dispatchCreate(
       applianceId: appliance_id,
       fees: feesParsed.fees,
       accessories: accessoriesParsed.accessories,
-      tax,
+      discounts: discountsParsed.reductions,
+      tradeIns: tradeInsParsed.reductions,
       customerId: customer_id,
     })
     if (!result.success) {

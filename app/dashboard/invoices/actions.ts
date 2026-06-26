@@ -18,12 +18,23 @@ export type ApplianceSaleAccessoryPayload = {
   unit_price?: number
 }
 
+export type ApplianceSaleDiscountPayload = {
+  description: string
+  amount: number
+}
+
+export type ApplianceSaleTradeInPayload = {
+  description: string
+  amount: number
+}
+
 export type CreateApplianceSaleInvoicePayload = {
   appliance_id: string
   customer_id?: string | null
-  tax?: number
   fees: ApplianceSaleFeePayload[]
   accessories: ApplianceSaleAccessoryPayload[]
+  discounts?: ApplianceSaleDiscountPayload[]
+  trade_ins?: ApplianceSaleTradeInPayload[]
 }
 
 async function invoicesApiPost(
@@ -90,18 +101,14 @@ export async function createApplianceSaleInvoiceViaApi(
     return { ok: false, error: 'Select an appliance to sell.' }
   }
 
-  const tax = input.tax ?? 0
-  if (!Number.isFinite(tax) || tax < 0) {
-    return { ok: false, error: 'Tax must be a non-negative number.' }
-  }
-
   const result = await invoicesApiPost({
     invoice_type: 'appliance_sale',
     appliance_id,
     customer_id: input.customer_id?.trim() || null,
-    tax,
     fees: input.fees,
     accessories: input.accessories,
+    discounts: input.discounts ?? [],
+    trade_ins: input.trade_ins ?? [],
   })
 
   if (!result.ok) {

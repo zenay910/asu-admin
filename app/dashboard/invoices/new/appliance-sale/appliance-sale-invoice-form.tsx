@@ -7,7 +7,9 @@ import { toast } from 'sonner'
 import {
   createApplianceSaleInvoiceViaApi,
   type ApplianceSaleAccessoryPayload,
+  type ApplianceSaleDiscountPayload,
   type ApplianceSaleFeePayload,
+  type ApplianceSaleTradeInPayload,
 } from '@/app/dashboard/invoices/actions'
 import { CustomerPicker } from '@/components/customer-picker'
 import { StatusBadge } from '@/components/status-badge'
@@ -25,6 +27,7 @@ import { useAppliances } from '@/lib/hooks/use-appliances'
 import { useFetchErrorToast } from '@/lib/hooks/use-fetch-error-toast'
 import { useParts } from '@/lib/hooks/use-parts'
 import { formatMoney } from '@/lib/format'
+import { TAX_RATE } from '@/lib/invoices/tax-rate'
 
 type FeeRow = {
   key: string
@@ -37,6 +40,12 @@ type AccessoryRow = {
   partId: string
   quantity: string
   unitPrice: string
+}
+
+type ReductionRow = {
+  key: string
+  description: string
+  amount: string
 }
 
 function newRowKey(): string {
@@ -99,6 +108,39 @@ function parseAccessories(
   return accessories
 }
 
+function parseReductions(
+  rows: ReductionRow[],
+  label: string,
+): ApplianceSaleDiscountPayload[] | ApplianceSaleTradeInPayload[] | string {
+  const reductions: ApplianceSaleDiscountPayload[] = []
+  for (const row of rows) {
+    const description = row.description.trim()
+    const amountRaw = row.amount.trim()
+    if (!description && !amountRaw) continue
+    if (!description) {
+      return `Each ${label} line needs a description.`
+    }
+    const amount = Number(amountRaw)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return `Each ${label} line needs a positive amount.`
+    }
+    reductions.push({ description, amount })
+  }
+  return reductions
+}
+
+function sumValidReductionAmounts(rows: ReductionRow[]): number {
+  let sum = 0
+  for (const row of rows) {
+    const description = row.description.trim()
+    const amount = Number(row.amount.trim())
+    if (description && Number.isFinite(amount) && amount > 0) {
+      sum += amount
+    }
+  }
+  return sum
+}
+
 export function ApplianceSaleInvoiceForm() {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -111,9 +153,10 @@ export function ApplianceSaleInvoiceForm() {
 
   const [applianceId, setApplianceId] = useState('')
   const [customerId, setCustomerId] = useState('')
-  const [tax, setTax] = useState('0')
   const [fees, setFees] = useState<FeeRow[]>([])
   const [accessories, setAccessories] = useState<AccessoryRow[]>([])
+  const [discounts, setDiscounts] = useState<ReductionRow[]>([])
+  const [tradeIns, setTradeIns] = useState<ReductionRow[]>([])
 
   const sellableAppliances = useMemo(
     () =>
@@ -141,7 +184,7 @@ export function ApplianceSaleInvoiceForm() {
     [parts],
   )
 
-  const previewSubtotal = useMemo(() => {
+  const previewGross = useMemo(() => {
     let sum = selectedAppliance?.price ?? 0
     for (const row of fees) {
       const amount = Number(row.amount.trim())
@@ -164,10 +207,20 @@ export function ApplianceSaleInvoiceForm() {
     return sum
   }, [selectedAppliance, fees, accessories, partsById])
 
-  const previewTax = useMemo(() => {
-    const value = Number(tax.trim())
-    return Number.isFinite(value) && value >= 0 ? value : 0
-  }, [tax])
+  const previewDiscounts = useMemo(
+    () => sumValidReductionAmounts(discounts),
+    [discounts],
+  )
+
+  const previewTradeIns = useMemo(
+    () => sumValidReductionAmounts(tradeIns),
+    [tradeIns],
+  )
+
+  const previewSubtotal = previewGross - previewDiscounts - previewTradeIns
+  const previewTax = previewSubtotal * TAX_RATE
+  const previewTotal = previewSubtotal + previewTax
+  const hasReductions = previewDiscounts > 0 || previewTradeIns > 0
 
   function addFee(description = '', amount = '') {
     setFees((prev) => [
@@ -191,6 +244,92 @@ export function ApplianceSaleInvoiceForm() {
     setAccessories((prev) => prev.filter((row) => row.key !== key))
   }
 
+  function addDiscount() {
+    setDiscounts((prev) => [
+      ...prev,
+      { key: newRowKey(), description: '', amount: '' },
+    ])
+  }
+
+  function removeDiscount(key: string) {
+    setDiscounts((prev) => prev.filter((row) => row.key !== key))
+  }
+
+  function addTradeIn() {
+    setTradeIns((prev) => [
+      ...prev,
+      { key: newRowKey(), description: '', amount: '' },
+    ])
+  }
+
+  function removeTradeIn(key: string) {
+    setTradeIns((prev) => prev.filter((row) => row.key !== key))
+  }
+
+  function renderReductionRows(
+    rows: ReductionRow[],
+    setRows: React.Dispatch<React.SetStateAction<ReductionRow[]>>,
+    onRemove: (key: string) => void,
+  ) {
+    return (
+      <ul className="space-y-3">
+        {rows.map((row) => (
+          <li
+            key={row.key}
+            className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-[1fr_8rem_auto]"
+          >
+            <div className="space-y-1">
+              <Label className="sr-only">Description</Label>
+              <Input
+                placeholder="Description"
+                value={row.description}
+                onChange={(e) =>
+                  setRows((prev) =>
+                    prev.map((item) =>
+                      item.key === row.key
+                        ? { ...item, description: e.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                disabled={pending}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="sr-only">Amount</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="Amount"
+                value={row.amount}
+                onChange={(e) =>
+                  setRows((prev) =>
+                    prev.map((item) =>
+                      item.key === row.key
+                        ? { ...item, amount: e.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                disabled={pending}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => onRemove(row.key)}
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!applianceId) {
@@ -210,9 +349,15 @@ export function ApplianceSaleInvoiceForm() {
       return
     }
 
-    const taxValue = Number(tax.trim())
-    if (!Number.isFinite(taxValue) || taxValue < 0) {
-      toast.error('Tax must be a non-negative number.')
+    const discountsParsed = parseReductions(discounts, 'discount')
+    if (typeof discountsParsed === 'string') {
+      toast.error(discountsParsed)
+      return
+    }
+
+    const tradeInsParsed = parseReductions(tradeIns, 'trade-in')
+    if (typeof tradeInsParsed === 'string') {
+      toast.error(tradeInsParsed)
       return
     }
 
@@ -220,9 +365,10 @@ export function ApplianceSaleInvoiceForm() {
       const result = await createApplianceSaleInvoiceViaApi({
         appliance_id: applianceId,
         customer_id: customerId.trim() || null,
-        tax: taxValue,
         fees: feesParsed,
         accessories: accessoriesParsed,
+        discounts: discountsParsed,
+        trade_ins: tradeInsParsed,
       })
       if (!result.ok) {
         toast.error(result.error)
@@ -500,38 +646,103 @@ export function ApplianceSaleInvoiceForm() {
         )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-foreground">Discounts</h2>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={pending}
+            onClick={addDiscount}
+          >
+            Add discount
+          </Button>
+        </div>
+        {discounts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Optional price markdowns subtracted from the invoice subtotal.
+          </p>
+        ) : (
+          renderReductionRows(discounts, setDiscounts, removeDiscount)
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-foreground">Trade-ins</h2>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={pending}
+            onClick={addTradeIn}
+          >
+            Add trade-in
+          </Button>
+        </div>
+        {tradeIns.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Optional credits for old machines taken in on the sale.
+          </p>
+        ) : (
+          renderReductionRows(tradeIns, setTradeIns, removeTradeIn)
+        )}
+      </section>
+
+      <section className="">
         <CustomerPicker
           id="sale-customer"
           value={customerId}
           onChange={setCustomerId}
           disabled={pending}
         />
-        <div className="space-y-2">
-          <Label htmlFor="sale-tax">Tax</Label>
-          <Input
-            id="sale-tax"
-            type="number"
-            min={0}
-            step="0.01"
-            value={tax}
-            onChange={(e) => setTax(e.target.value)}
-            disabled={pending}
-          />
-        </div>
+        
       </section>
 
-      <div className="rounded-md border border-border bg-muted/30 p-4 text-sm">
+      <div className="rounded-md border border-border bg-muted/30 p-4 text-sm space-y-1">
+        {hasReductions ? (
+          <p className="text-muted-foreground">
+            Gross subtotal:{' '}
+            <span className="font-medium text-foreground tabular-nums">
+              {formatMoney(previewGross)}
+            </span>
+          </p>
+        ) : null}
+        {previewDiscounts > 0 ? (
+          <p className="text-muted-foreground">
+            Discounts:{' '}
+            <span className="font-medium text-foreground tabular-nums">
+              −{formatMoney(previewDiscounts)}
+            </span>
+          </p>
+        ) : null}
+        {previewTradeIns > 0 ? (
+          <p className="text-muted-foreground">
+            Trade-ins:{' '}
+            <span className="font-medium text-foreground tabular-nums">
+              −{formatMoney(previewTradeIns)}
+            </span>
+          </p>
+        ) : null}
         <p className="text-muted-foreground">
-          Estimated subtotal:{' '}
+          {hasReductions ? 'Net subtotal' : 'Estimated subtotal'}:{' '}
           <span className="font-medium text-foreground tabular-nums">
             {formatMoney(previewSubtotal)}
           </span>
         </p>
+        {previewTax > 0 ? (
+          <p className="text-muted-foreground">
+            Tax:{' '}
+            <span className="font-medium text-foreground tabular-nums">
+              {formatMoney(previewTax)}
+            </span>
+          </p>
+        ) : null}
         <p className="text-muted-foreground">
           Estimated total:{' '}
           <span className="font-medium text-foreground tabular-nums">
-            {formatMoney(previewSubtotal + previewTax)}
+            {formatMoney(previewTotal)}
           </span>
         </p>
       </div>

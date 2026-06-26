@@ -1,4 +1,5 @@
 import { assertCustomerExists } from '@/lib/data/customers'
+import { TAX_RATE } from '@/lib/invoices/tax-rate'
 import { createClient } from '@/lib/supabase/server'
 import type {
   Invoice,
@@ -102,6 +103,43 @@ export function computeLineTotal(
   unitPrice: number,
 ): number {
   return quantity * unitPrice
+}
+
+/** Re-exported for server-side invoice recomputation. */
+export { TAX_RATE } from '@/lib/invoices/tax-rate'
+
+const POSITIVE_LINE_ITEM_KINDS: ReadonlySet<LineItemKind> = new Set([
+  'labor',
+  'part',
+  'appliance',
+  'fee',
+])
+
+export function computeInvoiceTotals(lineItems: InvoiceLineItem[]): {
+  subtotal: number
+  tax: number
+  total: number
+} {
+  let grossSubtotal = 0
+  let discountsTotal = 0
+  let tradeInsTotal = 0
+
+  for (const line of lineItems) {
+    if (POSITIVE_LINE_ITEM_KINDS.has(line.kind)) {
+      grossSubtotal += line.line_total
+    } else if (line.kind === 'discount') {
+      discountsTotal += line.line_total
+    } else if (line.kind === 'trade_in') {
+      tradeInsTotal += line.line_total
+    }
+  }
+
+  const taxableBase = grossSubtotal + discountsTotal + tradeInsTotal
+  const tax = taxableBase * TAX_RATE
+  const subtotal = taxableBase
+  const total = taxableBase + tax
+
+  return { subtotal, tax, total }
 }
 
 export async function listInvoices(
@@ -218,16 +256,12 @@ export async function recomputeInvoiceTotals(
     throw new Error('Invoice not found')
   }
 
-  const subtotal = invoice.line_items.reduce(
-    (sum, line) => sum + line.line_total,
-    0,
-  )
-  const total = subtotal + invoice.tax
+  const { subtotal, tax, total } = computeInvoiceTotals(invoice.line_items)
 
   const supabase = await createClient()
   const { error } = await supabase
     .from('invoices')
-    .update({ subtotal, total })
+    .update({ subtotal, tax, total })
     .eq('id', id)
 
   throwOnError(error, 'Failed to recompute invoice totals')
@@ -339,7 +373,6 @@ export async function runInvoicesAccessorSmokeTest(): Promise<{
 
   const retailInvoice = await createInvoice({
     invoice_type: 'retail',
-    tax: 2.5,
   })
   const retailFetched = await getInvoiceById(retailInvoice.id)
   if (!retailFetched || retailFetched.invoice_type !== 'retail') {
@@ -383,9 +416,12 @@ export async function runInvoicesAccessorSmokeTest(): Promise<{
       `Expected subtotal ${expectedSubtotal}, got ${recomputed.subtotal}`,
     )
   }
-  const expectedTotal = expectedSubtotal + 2.5
+  const expectedTotal = expectedSubtotal
   if (recomputed.total !== expectedTotal) {
     throw new Error(`Expected total ${expectedTotal}, got ${recomputed.total}`)
+  }
+  if (recomputed.tax !== 0) {
+    throw new Error(`Expected tax 0, got ${recomputed.tax}`)
   }
   if (recomputed.line_items.length !== 4) {
     throw new Error(`Expected 4 line items, got ${recomputed.line_items.length}`)

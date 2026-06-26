@@ -30,6 +30,8 @@ const LINE_KIND_LABELS: Record<LineItemKind, string> = {
   part: 'Part',
   appliance: 'Appliance',
   fee: 'Fee',
+  discount: 'Discount',
+  trade_in: 'Trade-in',
 }
 
 function lineDescription(line: InvoiceLineItem): string {

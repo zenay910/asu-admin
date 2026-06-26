@@ -122,7 +122,7 @@ export function useCustomers(
       const parsed = JSON.parse(optionsKey) as UseCustomersOptions
       const mode = getResponseMode(parsed)
       const url = buildCustomersUrl(parsed)
-      const response = await fetch(url)
+      const response = await fetch(url, { cache: 'no-store' })
       const body: unknown = await response.json().catch(() => null)
 
       if (!response.ok) {
