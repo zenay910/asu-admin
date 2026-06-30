@@ -232,25 +232,16 @@ function InvoiceMeta({ invoice }: { invoice: InvoiceWithLineItems }) {
 
 function WarrantyTerms() {
   return (
-    <div className="invoice-print-warranty mt-6 space-y-2 border-t border-border pt-4 text-xs text-muted-foreground print:mt-2 print:space-y-1 print:border-foreground/20 print:pt-2 print:text-black/60">
+    <div className="mt-6 border-t border-border pt-3 text-[10px] leading-snug text-muted-foreground print:border-foreground/20 print:text-black/60">
       <p>
-        <strong>a)</strong> When you purchase or repair an appliance, you have one week to pick up your purchase.
+        <strong className="text-foreground print:text-black">Pickup:</strong> Purchased or repaired appliances must be picked up within one week of the invoice date.{' '}
+        <strong className="text-foreground print:text-black">Warranty:</strong> Washers, dryers, and stoves carry a 30-day warranty from the date of purchase. If the appliance stops working within that period, we will send a technician to diagnose it first and will repair or replace it at our discretion.{' '}
+        <strong className="text-foreground print:text-black">Service area:</strong> Technician visits are available within Salt Lake County; outside that area, you are responsible for bringing the appliance to our store.{' '}
+        <strong className="text-foreground print:text-black">Refunds:</strong> If a claim can't be resolved by repair or replacement, you'll receive a 75% refund or, at your preference, full store credit. Delivery and installation/removal are non-refundable.{' '}
+        <strong className="text-foreground print:text-black">Liability:</strong> This warranty excludes damage from misuse, third-party installation, or customer negligence. We are not responsible for pre-existing damage, or for flooding or property damage. We are not responsible for issues caused by the home's existing plumbing, electrical, or drainage, including floor drains, standpipes, or venting that are missing, undersized, blocked, or otherwise not functioning properly. If we identify unsafe or improper drainage, venting, or electrical conditions at the time of service, we may decline to complete installation; you will be responsible for correcting these conditions before installation can proceed.{' '}
       </p>
-      <p>
-        <strong>b)</strong> If your machine stops working during the warranty period (30 days: washers, dryers, and stoves),
-        we will send a technician first. According to results, we can replace your product.
-      </p>
-      <p>
-        <strong>c)</strong> Technician visits are available within Salt Lake County; otherwise, the customer must bring the equipment to the store.
-      </p>
-      <p>
-        <strong>d)</strong> We&apos;ll refund 75% of the amount paid, or it may stay as a credit.
-      </p>
-      <p>
-        <strong>e)</strong> We are not responsible for damages due to flooding, or for damages to property such as doors, floors, or walls when installing or fixing appliances.
-      </p>
-      <p>
-        <strong>f)</strong> The warranty does not cover damage due to negligence. Deliveries and installations are non-refundable.
+      <p className="pt-1 italic">
+        By accepting this receipt, you acknowledge and agree to the terms above.
       </p>
     </div>
   )
