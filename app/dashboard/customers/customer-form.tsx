@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
+import { PhoneInput } from '@/components/phone-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -102,12 +103,11 @@ export default function CustomerForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="phone">Phone</Label>
-          <Input
+          <PhoneInput
+            key={values.phone}
             id="phone"
             name="phone"
-            type="tel"
-            autoComplete="tel"
-            defaultValue={values.phone}
+            initialValue={values.phone}
           />
         </div>
       </div>

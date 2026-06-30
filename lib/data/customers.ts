@@ -13,6 +13,7 @@ import type {
   JobClass,
   JobState,
   JobType,
+  PaymentMethod,
 } from '@/lib/types/operations'
 
 export type CustomerListFilters = {
@@ -121,7 +122,12 @@ function mapInvoice(row: Record<string, unknown>): Invoice {
     status: row.status as InvoiceStatus,
     subtotal: Number(row.subtotal),
     tax: Number(row.tax),
+    surcharge: row.surcharge != null ? Number(row.surcharge) : 0,
     total: Number(row.total),
+    payment_method:
+      row.payment_method != null
+        ? (String(row.payment_method) as PaymentMethod)
+        : null,
     issued_at: row.issued_at != null ? String(row.issued_at) : null,
   }
 }

@@ -12,6 +12,8 @@ import { transitionApplianceState } from '@/lib/inventory/transition-appliance-s
 import { createPart, getPartById } from '@/lib/data/parts'
 import { createClient } from '@/lib/supabase/server'
 
+import type { PaymentMethod } from '@/lib/types/operations'
+
 export type ApplianceSaleFeeInput = {
   description: string
   amount: number
@@ -36,10 +38,12 @@ export type ApplianceSaleTradeInInput = {
 export type CreateApplianceSaleInvoiceInput = {
   applianceId: string
   fees?: ApplianceSaleFeeInput[]
+  nonTaxableFees?: ApplianceSaleFeeInput[]
   accessories?: ApplianceSaleAccessoryInput[]
   discounts?: ApplianceSaleDiscountInput[]
   tradeIns?: ApplianceSaleTradeInInput[]
   customerId?: string | null
+  paymentMethod: PaymentMethod
 }
 
 export type CreateApplianceSaleInvoiceResult =
@@ -84,6 +88,7 @@ export async function createApplianceSaleInvoice(
       invoice_type: 'appliance_sale',
       appliance_id: input.applianceId,
       customer_id: input.customerId ?? null,
+      payment_method: input.paymentMethod,
       tax: 0,
     })
     invoiceId = invoice.id
@@ -102,6 +107,17 @@ export async function createApplianceSaleInvoice(
         description: fee.description,
         quantity: 1,
         unit_price: fee.amount,
+        taxable: true,
+      })
+    }
+
+    for (const fee of input.nonTaxableFees ?? []) {
+      await addLineItem(invoice.id, {
+        kind: 'fee',
+        description: fee.description,
+        quantity: 1,
+        unit_price: fee.amount,
+        taxable: false,
       })
     }
 
@@ -218,7 +234,9 @@ export async function runCreateApplianceSaleInvoiceSmokeTest(): Promise<{
 
   const sold = await createApplianceSaleInvoice({
     applianceId: appliance.id,
-    fees: [{ description: 'Delivery', amount: 50 }],
+    paymentMethod: 'cash_venmo_zelle',
+    fees: [{ description: 'Installation', amount: 50 }],
+    nonTaxableFees: [{ description: 'Delivery', amount: 50 }],
     accessories: [
       { partId: partA.id, quantity: 1 },
       { partId: partB.id, quantity: 2 },
@@ -235,7 +253,7 @@ export async function runCreateApplianceSaleInvoiceSmokeTest(): Promise<{
 
   const invoice = sold.invoice
   const kinds = invoice.line_items.map((line) => line.kind).sort()
-  if (kinds.join(',') !== 'appliance,discount,fee,part,part,trade_in,trade_in') {
+  if (kinds.join(',') !== 'appliance,discount,fee,fee,part,part,trade_in,trade_in') {
     throw new Error(`Unexpected line kinds: ${kinds.join(',')}`)
   }
 
@@ -257,8 +275,16 @@ export async function runCreateApplianceSaleInvoiceSmokeTest(): Promise<{
       `Expected subtotal ${expectedSubtotal}, got ${invoice.subtotal}`,
     )
   }
-  if (invoice.total !== expectedSubtotal) {
-    throw new Error(`Expected total ${expectedSubtotal}, got ${invoice.total}`)
+  const expectedTax = expectedSubtotal * 0.0765
+  if (invoice.tax !== expectedTax) {
+    throw new Error(`Expected tax ${expectedTax}, got ${invoice.tax}`)
+  }
+  const expectedTotal = expectedSubtotal + expectedTax + 50
+  if (invoice.total !== expectedTotal) {
+    throw new Error(`Expected total ${expectedTotal}, got ${invoice.total}`)
+  }
+  if (invoice.surcharge !== 0) {
+    throw new Error(`Expected surcharge 0, got ${invoice.surcharge}`)
   }
 
   const soldAppliance = await getApplianceById(appliance.id)
@@ -278,6 +304,7 @@ export async function runCreateApplianceSaleInvoiceSmokeTest(): Promise<{
   })
   const retiredReject = await createApplianceSaleInvoice({
     applianceId: retiredAppliance.id,
+    paymentMethod: 'cash_venmo_zelle',
   })
   if (retiredReject.success) {
     throw new Error('Expected Retired appliance sale to be rejected')

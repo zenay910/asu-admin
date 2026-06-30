@@ -1,5 +1,8 @@
 import { assertCustomerExists } from '@/lib/data/customers'
-import { TAX_RATE } from '@/lib/invoices/tax-rate'
+import {
+  CREDIT_CARD_SURCHARGE_RATE,
+  TAX_RATE,
+} from '@/lib/invoices/tax-rate'
 import { createClient } from '@/lib/supabase/server'
 import type {
   Invoice,
@@ -7,6 +10,7 @@ import type {
   InvoiceStatus,
   InvoiceType,
   LineItemKind,
+  PaymentMethod,
 } from '@/lib/types/operations'
 
 export type InvoiceListFilters = {
@@ -22,6 +26,7 @@ export type CreateInvoiceInput = {
   customer_id?: string | null
   status?: InvoiceStatus
   tax?: number
+  payment_method?: PaymentMethod | null
   issued_at?: string | null
 }
 
@@ -36,6 +41,7 @@ export type AddLineItemInput = {
   description?: string | null
   quantity?: number
   unit_price?: number
+  taxable?: boolean
 }
 
 export type InvoiceWithLineItems = Invoice & {
@@ -55,7 +61,12 @@ function mapInvoice(row: Record<string, unknown>): Invoice {
     status: row.status as InvoiceStatus,
     subtotal: Number(row.subtotal),
     tax: Number(row.tax),
+    surcharge: row.surcharge != null ? Number(row.surcharge) : 0,
     total: Number(row.total),
+    payment_method:
+      row.payment_method != null
+        ? (String(row.payment_method) as PaymentMethod)
+        : null,
     issued_at: row.issued_at != null ? String(row.issued_at) : null,
   }
 }
@@ -73,6 +84,7 @@ function mapLineItem(row: Record<string, unknown>): InvoiceLineItem {
     quantity: Number(row.quantity),
     unit_price: Number(row.unit_price),
     line_total: Number(row.line_total),
+    taxable: row.taxable != null ? Boolean(row.taxable) : true,
   }
 }
 
@@ -106,7 +118,7 @@ export function computeLineTotal(
 }
 
 /** Re-exported for server-side invoice recomputation. */
-export { TAX_RATE } from '@/lib/invoices/tax-rate'
+export { CREDIT_CARD_SURCHARGE_RATE, TAX_RATE } from '@/lib/invoices/tax-rate'
 
 const POSITIVE_LINE_ITEM_KINDS: ReadonlySet<LineItemKind> = new Set([
   'labor',
@@ -115,18 +127,27 @@ const POSITIVE_LINE_ITEM_KINDS: ReadonlySet<LineItemKind> = new Set([
   'fee',
 ])
 
-export function computeInvoiceTotals(lineItems: InvoiceLineItem[]): {
+export function computeInvoiceTotals(
+  lineItems: InvoiceLineItem[],
+  paymentMethod: PaymentMethod | null = null,
+): {
   subtotal: number
   tax: number
+  surcharge: number
   total: number
 } {
-  let grossSubtotal = 0
+  let taxableGross = 0
+  let nonTaxableFees = 0
   let discountsTotal = 0
   let tradeInsTotal = 0
 
   for (const line of lineItems) {
     if (POSITIVE_LINE_ITEM_KINDS.has(line.kind)) {
-      grossSubtotal += line.line_total
+      if (line.kind === 'fee' && line.taxable === false) {
+        nonTaxableFees += line.line_total
+      } else {
+        taxableGross += line.line_total
+      }
     } else if (line.kind === 'discount') {
       discountsTotal += line.line_total
     } else if (line.kind === 'trade_in') {
@@ -134,12 +155,21 @@ export function computeInvoiceTotals(lineItems: InvoiceLineItem[]): {
     }
   }
 
-  const taxableBase = grossSubtotal + discountsTotal + tradeInsTotal
-  const tax = taxableBase * TAX_RATE
-  const subtotal = taxableBase
-  const total = taxableBase + tax
+  // Step A: taxable subtotal
+  const subtotal = taxableGross + discountsTotal + tradeInsTotal
+  // Step B: tax on taxable subtotal only
+  const tax = subtotal * TAX_RATE
+  // Step C: pre-fee total (includes non-taxable fees)
+  const preFeeTotal = subtotal + tax + nonTaxableFees
+  // Step D: credit card surcharge (not taxed)
+  const surcharge =
+    paymentMethod === 'credit_card'
+      ? preFeeTotal * CREDIT_CARD_SURCHARGE_RATE
+      : 0
+  // Step E: final total
+  const total = preFeeTotal + surcharge
 
-  return { subtotal, tax, total }
+  return { subtotal, tax, surcharge, total }
 }
 
 export async function listInvoices(
@@ -207,6 +237,7 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
     customer_id: input.customer_id ?? null,
     status: input.status ?? 'Draft',
     tax: input.tax ?? 0,
+    payment_method: input.payment_method ?? null,
     issued_at: input.issued_at ?? null,
   }
 
@@ -227,6 +258,7 @@ export async function addLineItem(
   const quantity = input.quantity ?? 1
   const unitPrice = input.unit_price ?? 0
   const lineTotal = computeLineTotal(quantity, unitPrice)
+  const taxable = input.taxable ?? true
 
   const supabase = await createClient()
   const { data, error } = await supabase
@@ -240,6 +272,7 @@ export async function addLineItem(
       quantity,
       unit_price: unitPrice,
       line_total: lineTotal,
+      taxable,
     })
     .select('*')
     .single()
@@ -256,12 +289,15 @@ export async function recomputeInvoiceTotals(
     throw new Error('Invoice not found')
   }
 
-  const { subtotal, tax, total } = computeInvoiceTotals(invoice.line_items)
+  const { subtotal, tax, surcharge, total } = computeInvoiceTotals(
+    invoice.line_items,
+    invoice.payment_method,
+  )
 
   const supabase = await createClient()
   const { error } = await supabase
     .from('invoices')
-    .update({ subtotal, tax, total })
+    .update({ subtotal, tax, surcharge, total })
     .eq('id', id)
 
   throwOnError(error, 'Failed to recompute invoice totals')
@@ -416,12 +452,16 @@ export async function runInvoicesAccessorSmokeTest(): Promise<{
       `Expected subtotal ${expectedSubtotal}, got ${recomputed.subtotal}`,
     )
   }
-  const expectedTotal = expectedSubtotal
+  const expectedTax = expectedSubtotal * TAX_RATE
+  if (recomputed.tax !== expectedTax) {
+    throw new Error(`Expected tax ${expectedTax}, got ${recomputed.tax}`)
+  }
+  const expectedTotal = expectedSubtotal + expectedTax
   if (recomputed.total !== expectedTotal) {
     throw new Error(`Expected total ${expectedTotal}, got ${recomputed.total}`)
   }
-  if (recomputed.tax !== 0) {
-    throw new Error(`Expected tax 0, got ${recomputed.tax}`)
+  if (recomputed.surcharge !== 0) {
+    throw new Error(`Expected surcharge 0, got ${recomputed.surcharge}`)
   }
   if (recomputed.line_items.length !== 4) {
     throw new Error(`Expected 4 line items, got ${recomputed.line_items.length}`)

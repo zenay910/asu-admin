@@ -21,6 +21,9 @@ export type InvoiceType = 'job' | 'appliance_sale' | 'retail'
 /** Matches `invoices_status_check` on public.invoices */
 export type InvoiceStatus = 'Draft' | 'Issued' | 'Paid' | 'Void'
 
+/** Payment method for appliance sale invoices (stored in invoices.payment_method). */
+export type PaymentMethod = 'cash_venmo_zelle' | 'debit_card' | 'credit_card'
+
 /** Matches `invoice_line_items_kind_check` on public.invoice_line_items */
 export type LineItemKind =
   | 'labor'
@@ -104,7 +107,9 @@ export type Invoice = {
   status: InvoiceStatus
   subtotal: number
   tax: number
+  surcharge: number
   total: number
+  payment_method: PaymentMethod | null
   issued_at: string | null
 }
 
@@ -120,4 +125,5 @@ export type InvoiceLineItem = {
   quantity: number
   unit_price: number
   line_total: number
+  taxable: boolean
 }

@@ -8,7 +8,7 @@ import { createApplianceSaleInvoice } from '@/lib/operations/create-appliance-sa
 import { createRetailInvoice } from '@/lib/operations/create-retail-invoice'
 import { generateInvoiceForJob } from '@/lib/operations/generate-invoice-for-job'
 import { createClient } from '@/lib/supabase/server'
-import type { Invoice, InvoiceStatus, InvoiceType } from '@/lib/types/operations'
+import type { Invoice, InvoiceStatus, InvoiceType, PaymentMethod } from '@/lib/types/operations'
 
 export type InvoicesApiSuccess =
   | { success: true; invoiceId: string }
@@ -40,6 +40,33 @@ function isInvoiceType(value: string): value is InvoiceType {
 
 function isInvoiceStatus(value: string): value is InvoiceStatus {
   return (INVOICE_STATUSES as readonly string[]).includes(value)
+}
+
+const PAYMENT_METHODS: readonly PaymentMethod[] = [
+  'cash_venmo_zelle',
+  'debit_card',
+  'credit_card',
+]
+
+function isPaymentMethod(value: string): value is PaymentMethod {
+  return (PAYMENT_METHODS as readonly string[]).includes(value)
+}
+
+function parsePaymentMethod(
+  raw: unknown,
+): { ok: true; paymentMethod: PaymentMethod } | { ok: false; error: string } {
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { ok: false, error: 'Missing required field: payment_method' }
+  }
+  const paymentMethod = raw.trim()
+  if (!isPaymentMethod(paymentMethod)) {
+    return {
+      ok: false,
+      error:
+        'Invalid payment_method; use cash_venmo_zelle, debit_card, or credit_card',
+    }
+  }
+  return { ok: true, paymentMethod }
 }
 
 function parseTax(raw: Record<string, unknown>): number | undefined {
@@ -274,6 +301,20 @@ async function dispatchCreate(
       return { ok: false, error: tradeInsParsed.error }
     }
 
+    const paymentMethodParsed = parsePaymentMethod(body.payment_method)
+    if (!paymentMethodParsed.ok) {
+      return { ok: false, error: paymentMethodParsed.error }
+    }
+
+    const nonTaxableFeesRaw =
+      body.non_taxable_fees !== undefined
+        ? body.non_taxable_fees
+        : body.nonTaxableFees
+    const nonTaxableFeesParsed = parseFees(nonTaxableFeesRaw)
+    if (!nonTaxableFeesParsed.ok) {
+      return { ok: false, error: nonTaxableFeesParsed.error }
+    }
+
     const customer_id =
       body.customer_id === undefined
         ? undefined
@@ -284,10 +325,12 @@ async function dispatchCreate(
     const result = await createApplianceSaleInvoice({
       applianceId: appliance_id,
       fees: feesParsed.fees,
+      nonTaxableFees: nonTaxableFeesParsed.fees,
       accessories: accessoriesParsed.accessories,
       discounts: discountsParsed.reductions,
       tradeIns: tradeInsParsed.reductions,
       customerId: customer_id,
+      paymentMethod: paymentMethodParsed.paymentMethod,
     })
     if (!result.success) {
       return { ok: false, error: result.error }

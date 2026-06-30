@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
+import { InvoicePrintDocument } from '@/components/invoice-print-document'
 import { InvoiceStatusControls } from '@/components/invoice-status-controls'
 import { PageHeader } from '@/components/page-header'
 import { PrintPageButton } from '@/components/print-page-button'
@@ -16,13 +18,40 @@ import {
   getInvoiceById,
   type InvoiceWithLineItems,
 } from '@/lib/data/invoices'
-import { formatDate, formatDateTime, formatMoney } from '@/lib/format'
-import type { InvoiceLineItem, LineItemKind } from '@/lib/types/operations'
+import { getCustomerById } from '@/lib/data/customers'
+import {
+  formatCustomerAddressDisplay,
+  formatDate,
+  formatDateTime,
+  formatInvoiceDate,
+  formatMoney,
+  formatPhone,
+} from '@/lib/format'
+import type { Customer } from '@/lib/types/crm'
+import type { InvoiceLineItem, LineItemKind, PaymentMethod } from '@/lib/types/operations'
+import { TAX_RATE } from '@/lib/invoices/tax-rate'
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash_venmo_zelle: 'Cash / Venmo / Zelle',
+  debit_card: 'Debit Card',
+  credit_card: 'Credit Card',
+}
 
 export const dynamic = 'force-dynamic'
 
 type PageProps = {
   params: Promise<{ id: string }>
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params
+  const invoice = await getInvoiceById(id)
+  if (!invoice) {
+    return { title: 'Invoice not found' }
+  }
+  return {
+    title: `Receipt ${invoice.invoice_number}`,
+  }
 }
 
 const LINE_KIND_LABELS: Record<LineItemKind, string> = {
@@ -39,10 +68,114 @@ function lineDescription(line: InvoiceLineItem): string {
   return LINE_KIND_LABELS[line.kind]
 }
 
-function sumLineTotals(lineItems: InvoiceLineItem[]): number {
-  return lineItems.reduce((sum, line) => sum + line.line_total, 0)
+function sumTaxableLineTotals(lineItems: InvoiceLineItem[]): number {
+  let sum = 0
+  for (const line of lineItems) {
+    if (line.kind === 'discount' || line.kind === 'trade_in') {
+      sum += line.line_total
+      continue
+    }
+    if (line.kind === 'fee' && line.taxable === false) {
+      continue
+    }
+    if (
+      line.kind === 'labor' ||
+      line.kind === 'part' ||
+      line.kind === 'appliance' ||
+      line.kind === 'fee'
+    ) {
+      sum += line.line_total
+    }
+  }
+  return sum
 }
 
+function sumNonTaxableFees(lineItems: InvoiceLineItem[]): number {
+  return lineItems
+    .filter((line) => line.kind === 'fee' && line.taxable === false)
+    .reduce((sum, line) => sum + line.line_total, 0)
+}
+
+type CustomerInfo = {
+  full_name?: string | null
+  addressLabel?: string | null
+  phone?: string | null
+}
+
+function toCustomerInfo(customer: Customer): CustomerInfo {
+  return {
+    full_name: customer.full_name,
+    addressLabel: formatCustomerAddressDisplay(customer.address),
+    phone: customer.phone ? formatPhone(customer.phone) : null,
+  }
+}
+
+function ReceiptHeader({ invoice }: { invoice: InvoiceWithLineItems }) {
+  return (
+    <div className="flex flex-col gap-6 sm:flex-row sm:justify-between">
+      {/* Company info */}
+      <div className="text-sm leading-relaxed">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground print:text-black/50">
+          Affordable prices at all times
+        </p>
+        <p className="mt-1 text-lg font-bold text-foreground print:text-black">
+          ASU Appliances Parts, LLC
+        </p>
+        <p className="text-muted-foreground print:text-black/70">2944 S West Temple</p>
+        <p className="text-muted-foreground print:text-black/70">Salt Lake City, UT 84115</p>
+        <p className="text-muted-foreground print:text-black/70">801 833 7629</p>
+        <p className="text-muted-foreground print:text-black/70">www.asuappliances.com</p>
+      </div>
+
+      {/* Receipt number + date */}
+      <div className="text-sm sm:text-right">
+        <dl className="space-y-1">
+          <div className="flex gap-6 sm:justify-end">
+            <dt className="font-semibold uppercase tracking-wide text-muted-foreground print:text-black/50">
+              Receipt No.
+            </dt>
+            <dd className="font-mono font-bold text-foreground print:text-black">
+              {invoice.invoice_number}
+            </dd>
+          </div>
+          <div className="flex gap-6 sm:justify-end">
+            <dt className="font-semibold uppercase tracking-wide text-muted-foreground print:text-black/50">
+              Date
+            </dt>
+            <dd className="text-foreground print:text-black">
+              {formatInvoiceDate(invoice)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function SoldToBlock({ customer }: { customer: CustomerInfo | null }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-4 text-sm print:rounded-none print:border-foreground/20 print:bg-transparent print:p-2">
+      <p className="mb-2 font-semibold uppercase tracking-wide text-muted-foreground print:text-black/50">
+        Sold To
+      </p>
+      {customer ? (
+        <address className="not-italic leading-relaxed text-foreground print:text-black">
+          {customer.full_name && <p className="font-medium">{customer.full_name}</p>}
+          {customer.addressLabel && (
+            <p className="whitespace-pre-line">{customer.addressLabel}</p>
+          )}
+          {customer.phone && <p>{customer.phone}</p>}
+        </address>
+      ) : (
+        <p className="text-muted-foreground print:text-black/50">
+          Customer information not available
+        </p>
+      )}
+    </div>
+  )
+}
+
+// Keep InvoiceMeta for the screen-only internal view (hidden on print)
 function InvoiceMeta({ invoice }: { invoice: InvoiceWithLineItems }) {
   return (
     <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -78,24 +211,9 @@ function InvoiceMeta({ invoice }: { invoice: InvoiceWithLineItems }) {
           {invoice.job_id ? (
             <Link
               href={`/dashboard/jobs/${invoice.job_id}`}
-              className="font-mono text-xs underline-offset-4 hover:text-primary hover:underline print:text-foreground print:no-underline"
+              className="font-mono text-xs underline-offset-4 hover:text-primary hover:underline"
             >
               {invoice.job_id}
-            </Link>
-          ) : (
-            '—'
-          )}
-        </dd>
-      </div>
-      <div>
-        <dt className="type-label text-muted-foreground">Appliance</dt>
-        <dd>
-          {invoice.appliance_id ? (
-            <Link
-              href={`/dashboard/inventory/${invoice.appliance_id}`}
-              className="font-mono text-xs underline-offset-4 hover:text-primary hover:underline print:text-foreground print:no-underline"
-            >
-              {invoice.appliance_id}
             </Link>
           ) : (
             '—'
@@ -112,6 +230,45 @@ function InvoiceMeta({ invoice }: { invoice: InvoiceWithLineItems }) {
   )
 }
 
+function WarrantyTerms() {
+  return (
+    <div className="invoice-print-warranty mt-6 space-y-2 border-t border-border pt-4 text-xs text-muted-foreground print:mt-2 print:space-y-1 print:border-foreground/20 print:pt-2 print:text-black/60">
+      <p>
+        <strong>a)</strong> When you purchase or repair an appliance, you have one week to pick up your purchase.
+      </p>
+      <p>
+        <strong>b)</strong> If your machine stops working during the warranty period (30 days: washers, dryers, and stoves),
+        we will send a technician first. According to results, we can replace your product.
+      </p>
+      <p>
+        <strong>c)</strong> Technician visits are available within Salt Lake County; otherwise, the customer must bring the equipment to the store.
+      </p>
+      <p>
+        <strong>d)</strong> We&apos;ll refund 75% of the amount paid, or it may stay as a credit.
+      </p>
+      <p>
+        <strong>e)</strong> We are not responsible for damages due to flooding, or for damages to property such as doors, floors, or walls when installing or fixing appliances.
+      </p>
+      <p>
+        <strong>f)</strong> The warranty does not cover damage due to negligence. Deliveries and installations are non-refundable.
+      </p>
+    </div>
+  )
+}
+
+function ReceiptFooter() {
+  return (
+    <div className="mt-8 space-y-4 border-t border-border pt-6 print:mt-0 print:space-y-2 print:border-foreground/20 print:pt-3">
+      <p className="text-sm text-muted-foreground print:text-black/60">
+        Sign: <span className="inline-block w-48 border-b border-current" />
+      </p>
+      <p className="text-center text-sm font-semibold uppercase tracking-widest text-foreground print:text-black">
+        Thank you for your business!
+      </p>
+    </div>
+  )
+}
+
 function LineItemsTable({ lineItems }: { lineItems: InvoiceLineItem[] }) {
   if (lineItems.length === 0) {
     return (
@@ -120,23 +277,23 @@ function LineItemsTable({ lineItems }: { lineItems: InvoiceLineItem[] }) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border print:overflow-visible print:rounded-none print:border-foreground/20">
-      <table className="w-full text-sm" aria-label="Invoice line items">
+    <div className="invoice-print-items overflow-x-auto rounded-md border border-border print:overflow-hidden print:rounded-none print:border-foreground/20">
+      <table className="w-full text-sm print:text-[inherit]" aria-label="Invoice line items">
         <thead>
           <tr className="border-b border-border bg-muted/40 text-left print:bg-transparent">
-            <th scope="col" className="px-4 py-2 font-medium">
+            <th scope="col" className="px-4 py-2 font-medium print:px-2 print:py-1">
               Kind
             </th>
-            <th scope="col" className="px-4 py-2 font-medium">
+            <th scope="col" className="px-4 py-2 font-medium print:px-2 print:py-1">
               Description
             </th>
-            <th scope="col" className="px-4 py-2 font-medium text-right">
+            <th scope="col" className="px-4 py-2 font-medium text-right print:px-2 print:py-1">
               Qty
             </th>
-            <th scope="col" className="px-4 py-2 font-medium text-right">
+            <th scope="col" className="px-4 py-2 font-medium text-right print:px-2 print:py-1">
               Unit price
             </th>
-            <th scope="col" className="px-4 py-2 font-medium text-right">
+            <th scope="col" className="px-4 py-2 font-medium text-right print:px-2 print:py-1">
               Line total
             </th>
           </tr>
@@ -145,17 +302,17 @@ function LineItemsTable({ lineItems }: { lineItems: InvoiceLineItem[] }) {
           {lineItems.map((line) => (
             <tr
               key={line.id}
-              className="border-b border-border last:border-0 print:break-inside-avoid"
+              className="border-b border-border last:border-0"
             >
-              <td className="px-4 py-3 text-foreground">
+              <td className="px-4 py-3 text-foreground print:px-2 print:py-1">
                 {LINE_KIND_LABELS[line.kind]}
               </td>
-              <td className="px-4 py-3 text-foreground">{lineDescription(line)}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{line.quantity}</td>
-              <td className="px-4 py-3 text-right tabular-nums">
+              <td className="px-4 py-3 text-foreground print:px-2 print:py-1">{lineDescription(line)}</td>
+              <td className="px-4 py-3 text-right tabular-nums print:px-2 print:py-1">{line.quantity}</td>
+              <td className="px-4 py-3 text-right tabular-nums print:px-2 print:py-1">
                 {formatMoney(line.unit_price)}
               </td>
-              <td className="px-4 py-3 text-right tabular-nums font-medium">
+              <td className="px-4 py-3 text-right tabular-nums font-medium print:px-2 print:py-1">
                 {formatMoney(line.line_total)}
               </td>
             </tr>
@@ -167,7 +324,11 @@ function LineItemsTable({ lineItems }: { lineItems: InvoiceLineItem[] }) {
 }
 
 function TotalsBlock({ invoice }: { invoice: InvoiceWithLineItems }) {
-  const computedSubtotal = sumLineTotals(invoice.line_items)
+  const computedTaxableSubtotal = sumTaxableLineTotals(invoice.line_items)
+  const nonTaxableFees = sumNonTaxableFees(invoice.line_items)
+  const paymentMethodLabel = invoice.payment_method
+    ? PAYMENT_METHOD_LABELS[invoice.payment_method]
+    : null
 
   return (
     <div className="ml-auto w-full max-w-xs space-y-2 text-sm print:max-w-sm">
@@ -177,25 +338,51 @@ function TotalsBlock({ invoice }: { invoice: InvoiceWithLineItems }) {
           {formatMoney(invoice.subtotal)}
         </span>
       </div>
-      {computedSubtotal !== invoice.subtotal ? (
-        <p className="text-xs text-amber-700 dark:text-amber-300 print:text-foreground">
-          Line items sum to {formatMoney(computedSubtotal)} (stored subtotal differs).
+      {computedTaxableSubtotal !== invoice.subtotal ? (
+        <p className="text-xs text-amber-700 dark:text-amber-300 print:hidden">
+          Taxable line items sum to {formatMoney(computedTaxableSubtotal)} (stored
+          subtotal differs).
         </p>
       ) : null}
       <div className="flex justify-between gap-4">
-        <span className="text-muted-foreground">Tax</span>
+        <span className="text-muted-foreground">Tax ({(TAX_RATE * 100).toFixed(2)}%)</span>
         <span className="tabular-nums text-foreground">
           {formatMoney(invoice.tax)}
         </span>
       </div>
+      {nonTaxableFees > 0 ? (
+        <div className="flex justify-between gap-4">
+          <span className="text-muted-foreground">Non-taxable fees</span>
+          <span className="tabular-nums text-foreground">
+            {formatMoney(nonTaxableFees)}
+          </span>
+        </div>
+      ) : null}
+      {invoice.surcharge > 0 ? (
+        <div className="flex justify-between gap-4">
+          <span className="text-muted-foreground">Credit card surcharge (3%)</span>
+          <span className="tabular-nums text-foreground">
+            {formatMoney(invoice.surcharge)}
+          </span>
+        </div>
+      ) : null}
       <div className="flex justify-between gap-4 border-t border-border pt-2 text-base print:border-foreground/30">
         <span className="font-semibold text-foreground">Total</span>
         <span className="tabular-nums font-semibold text-foreground">
           {formatMoney(invoice.total)}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground print:text-foreground/80">
-        Total = subtotal + tax ({formatMoney(invoice.subtotal + invoice.tax)})
+      {paymentMethodLabel ? (
+        <p className="text-xs text-muted-foreground print:text-black/60">
+          Payment method: {paymentMethodLabel}
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground print:hidden">
+        Total = subtotal + tax + non-taxable fees + surcharge (
+        {formatMoney(
+          invoice.subtotal + invoice.tax + nonTaxableFees + invoice.surcharge,
+        )}
+        )
       </p>
     </div>
   )
@@ -209,8 +396,14 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     notFound()
   }
 
+  const customerRecord = invoice.customer_id
+    ? await getCustomerById(invoice.customer_id).catch(() => null)
+    : null
+  const customer = customerRecord ? toCustomerInfo(customerRecord) : null
+
   return (
     <div className="space-y-8">
+      {/* Screen-only header + controls */}
       <div className="print:hidden">
         <PageHeader
           title={invoice.invoice_number}
@@ -230,30 +423,32 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
         <InvoiceStatusControls invoiceId={invoice.id} status={invoice.status} />
       </div>
 
-      <article className="invoice-print-document space-y-6 rounded-lg border border-border bg-card p-6 shadow-sm print:rounded-none print:border-0 print:bg-white print:p-0 print:shadow-none print:text-black">
-        <header className="space-y-4 border-b border-border pb-6 print:border-foreground/20 print:pb-4">
-          <div className="hidden print:block">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground print:text-black/70">
-              ASU Admin · Invoice
-            </p>
-            <h1 className="mt-1 font-mono text-2xl font-semibold text-foreground print:text-black">
-              {invoice.invoice_number}
-            </h1>
-          </div>
-          <InvoiceMeta invoice={invoice} />
-        </header>
+      {/* Screen-only internal meta (type, appliance ID, etc.) */}
+      <div className="print:hidden rounded-lg border border-border bg-card p-6 shadow-sm">
+        <InvoiceMeta invoice={invoice} />
+      </div>
 
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-foreground print:text-black">
-            Line items
-          </h2>
+      {/* Print / customer receipt */}
+      <InvoicePrintDocument lineItemCount={invoice.line_items.length}>
+        <div className="invoice-print-header space-y-4 print:space-y-3">
+          <header className="border-b border-border pb-6 print:border-foreground/20 print:pb-3">
+            <ReceiptHeader invoice={invoice} />
+          </header>
+          <SoldToBlock customer={customer} />
+        </div>
+
+        <div className="invoice-print-body">
           <LineItemsTable lineItems={invoice.line_items} />
-        </section>
+          <section className="border-t border-border pt-4 print:border-foreground/20 print:pt-2">
+            <TotalsBlock invoice={invoice} />
+          </section>
+          <WarrantyTerms />
+        </div>
 
-        <section className="border-t border-border pt-6 print:border-foreground/20 print:pt-4">
-          <TotalsBlock invoice={invoice} />
-        </section>
-      </article>
+        <div className="invoice-print-footer">
+          <ReceiptFooter />
+        </div>
+      </InvoicePrintDocument>
 
       <Card className="print:hidden">
         <CardHeader>

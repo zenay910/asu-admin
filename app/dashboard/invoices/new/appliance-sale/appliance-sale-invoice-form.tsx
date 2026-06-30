@@ -27,7 +27,17 @@ import { useAppliances } from '@/lib/hooks/use-appliances'
 import { useFetchErrorToast } from '@/lib/hooks/use-fetch-error-toast'
 import { useParts } from '@/lib/hooks/use-parts'
 import { formatMoney } from '@/lib/format'
-import { TAX_RATE } from '@/lib/invoices/tax-rate'
+import {
+  CREDIT_CARD_SURCHARGE_RATE,
+  TAX_RATE,
+} from '@/lib/invoices/tax-rate'
+import type { PaymentMethod } from '@/lib/types/operations'
+
+const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: 'cash_venmo_zelle', label: 'Cash / Venmo / Zelle' },
+  { value: 'debit_card', label: 'Debit Card' },
+  { value: 'credit_card', label: 'Credit Card' },
+]
 
 type FeeRow = {
   key: string
@@ -129,6 +139,18 @@ function parseReductions(
   return reductions
 }
 
+function sumValidFeeAmounts(rows: FeeRow[]): number {
+  let sum = 0
+  for (const row of rows) {
+    const description = row.description.trim()
+    const amount = Number(row.amount.trim())
+    if (description && Number.isFinite(amount)) {
+      sum += amount
+    }
+  }
+  return sum
+}
+
 function sumValidReductionAmounts(rows: ReductionRow[]): number {
   let sum = 0
   for (const row of rows) {
@@ -153,7 +175,9 @@ export function ApplianceSaleInvoiceForm() {
 
   const [applianceId, setApplianceId] = useState('')
   const [customerId, setCustomerId] = useState('')
-  const [fees, setFees] = useState<FeeRow[]>([])
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('')
+  const [taxableFees, setTaxableFees] = useState<FeeRow[]>([])
+  const [nonTaxableFees, setNonTaxableFees] = useState<FeeRow[]>([])
   const [accessories, setAccessories] = useState<AccessoryRow[]>([])
   const [discounts, setDiscounts] = useState<ReductionRow[]>([])
   const [tradeIns, setTradeIns] = useState<ReductionRow[]>([])
@@ -184,14 +208,19 @@ export function ApplianceSaleInvoiceForm() {
     [parts],
   )
 
+  const previewTaxableFees = useMemo(
+    () => sumValidFeeAmounts(taxableFees),
+    [taxableFees],
+  )
+
+  const previewNonTaxableFees = useMemo(
+    () => sumValidFeeAmounts(nonTaxableFees),
+    [nonTaxableFees],
+  )
+
   const previewGross = useMemo(() => {
     let sum = selectedAppliance?.price ?? 0
-    for (const row of fees) {
-      const amount = Number(row.amount.trim())
-      if (row.description.trim() && Number.isFinite(amount)) {
-        sum += amount
-      }
-    }
+    sum += previewTaxableFees
     for (const row of accessories) {
       if (!row.partId) continue
       const qty = Number(row.quantity.trim())
@@ -205,7 +234,7 @@ export function ApplianceSaleInvoiceForm() {
       }
     }
     return sum
-  }, [selectedAppliance, fees, accessories, partsById])
+  }, [selectedAppliance, previewTaxableFees, accessories, partsById])
 
   const previewDiscounts = useMemo(
     () => sumValidReductionAmounts(discounts),
@@ -219,18 +248,35 @@ export function ApplianceSaleInvoiceForm() {
 
   const previewSubtotal = previewGross - previewDiscounts - previewTradeIns
   const previewTax = previewSubtotal * TAX_RATE
-  const previewTotal = previewSubtotal + previewTax
+  const previewPreFeeTotal =
+    previewSubtotal + previewTax + previewNonTaxableFees
+  const previewSurcharge =
+    paymentMethod === 'credit_card'
+      ? previewPreFeeTotal * CREDIT_CARD_SURCHARGE_RATE
+      : 0
+  const previewTotal = previewPreFeeTotal + previewSurcharge
   const hasReductions = previewDiscounts > 0 || previewTradeIns > 0
 
-  function addFee(description = '', amount = '') {
-    setFees((prev) => [
+  function addTaxableFee(description = '', amount = '') {
+    setTaxableFees((prev) => [
       ...prev,
       { key: newRowKey(), description, amount },
     ])
   }
 
-  function removeFee(key: string) {
-    setFees((prev) => prev.filter((row) => row.key !== key))
+  function removeTaxableFee(key: string) {
+    setTaxableFees((prev) => prev.filter((row) => row.key !== key))
+  }
+
+  function addNonTaxableFee(description = '', amount = '') {
+    setNonTaxableFees((prev) => [
+      ...prev,
+      { key: newRowKey(), description, amount },
+    ])
+  }
+
+  function removeNonTaxableFee(key: string) {
+    setNonTaxableFees((prev) => prev.filter((row) => row.key !== key))
   }
 
   function addAccessory() {
@@ -264,6 +310,70 @@ export function ApplianceSaleInvoiceForm() {
 
   function removeTradeIn(key: string) {
     setTradeIns((prev) => prev.filter((row) => row.key !== key))
+  }
+
+  function renderFeeRows(
+    rows: FeeRow[],
+    setRows: React.Dispatch<React.SetStateAction<FeeRow[]>>,
+    onRemove: (key: string) => void,
+  ) {
+    return (
+      <ul className="space-y-3">
+        {rows.map((row) => (
+          <li
+            key={row.key}
+            className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-[1fr_8rem_auto]"
+          >
+            <div className="space-y-1">
+              <Label className="sr-only">Description</Label>
+              <Input
+                placeholder="Description"
+                value={row.description}
+                onChange={(e) =>
+                  setRows((prev) =>
+                    prev.map((item) =>
+                      item.key === row.key
+                        ? { ...item, description: e.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                disabled={pending}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="sr-only">Amount</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="Amount"
+                value={row.amount}
+                onChange={(e) =>
+                  setRows((prev) =>
+                    prev.map((item) =>
+                      item.key === row.key
+                        ? { ...item, amount: e.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                disabled={pending}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => onRemove(row.key)}
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+    )
   }
 
   function renderReductionRows(
@@ -337,9 +447,20 @@ export function ApplianceSaleInvoiceForm() {
       return
     }
 
-    const feesParsed = parseFees(fees)
+    if (!paymentMethod) {
+      toast.error('Select a payment method.')
+      return
+    }
+
+    const feesParsed = parseFees(taxableFees)
     if (typeof feesParsed === 'string') {
       toast.error(feesParsed)
+      return
+    }
+
+    const nonTaxableFeesParsed = parseFees(nonTaxableFees)
+    if (typeof nonTaxableFeesParsed === 'string') {
+      toast.error(nonTaxableFeesParsed)
       return
     }
 
@@ -365,7 +486,9 @@ export function ApplianceSaleInvoiceForm() {
       const result = await createApplianceSaleInvoiceViaApi({
         appliance_id: applianceId,
         customer_id: customerId.trim() || null,
+        payment_method: paymentMethod,
         fees: feesParsed,
+        non_taxable_fees: nonTaxableFeesParsed,
         accessories: accessoriesParsed,
         discounts: discountsParsed,
         trade_ins: tradeInsParsed,
@@ -411,7 +534,7 @@ export function ApplianceSaleInvoiceForm() {
                 }
               />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-72 overflow-y-auto">
               {sellableAppliances.map((row) => (
                 <SelectItem key={row.id} value={row.id}>
                   {`${row.title || row.model_number} · ${formatMoney(row.price)} · ${row.lifecycle_state}`}
@@ -444,23 +567,14 @@ export function ApplianceSaleInvoiceForm() {
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-foreground">Fees</h2>
+          <h2 className="text-lg font-semibold text-foreground">Taxable Fees</h2>
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={pending}
-              onClick={() => addFee('Delivery', '')}
-            >
-              Add delivery
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending}
-              onClick={() => addFee('Installation', '')}
+              onClick={() => addTaxableFee('Installation', '')}
             >
               Add installation
             </Button>
@@ -469,72 +583,57 @@ export function ApplianceSaleInvoiceForm() {
               variant="secondary"
               size="sm"
               disabled={pending}
-              onClick={() => addFee()}
+              onClick={() => addTaxableFee()}
             >
               Add fee
             </Button>
           </div>
         </div>
-        {fees.length === 0 ? (
+        {taxableFees.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Optional delivery or installation fees (fee line items).
+            Optional fees included in the taxable subtotal (e.g. installation).
           </p>
         ) : (
-          <ul className="space-y-3">
-            {fees.map((row) => (
-              <li
-                key={row.key}
-                className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-[1fr_8rem_auto]"
-              >
-                <div className="space-y-1">
-                  <Label className="sr-only">Description</Label>
-                  <Input
-                    placeholder="Description"
-                    value={row.description}
-                    onChange={(e) =>
-                      setFees((prev) =>
-                        prev.map((item) =>
-                          item.key === row.key
-                            ? { ...item, description: e.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="sr-only">Amount</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    placeholder="Amount"
-                    value={row.amount}
-                    onChange={(e) =>
-                      setFees((prev) =>
-                        prev.map((item) =>
-                          item.key === row.key
-                            ? { ...item, amount: e.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    disabled={pending}
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => removeFee(row.key)}
-                >
-                  Remove
-                </Button>
-              </li>
-            ))}
-          </ul>
+          renderFeeRows(taxableFees, setTaxableFees, removeTaxableFee)
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-foreground">
+            Non-Taxable Fees
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => addNonTaxableFee('Delivery', '')}
+            >
+              Add delivery
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={pending}
+              onClick={() => addNonTaxableFee()}
+            >
+              Add fee
+            </Button>
+          </div>
+        </div>
+        {nonTaxableFees.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Optional fees added after tax (e.g. delivery).
+          </p>
+        ) : (
+          renderFeeRows(
+            nonTaxableFees,
+            setNonTaxableFees,
+            removeNonTaxableFee,
+          )
         )}
       </section>
 
@@ -690,14 +789,40 @@ export function ApplianceSaleInvoiceForm() {
         )}
       </section>
 
-      <section className="">
+      <section className="space-y-4">
         <CustomerPicker
           id="sale-customer"
           value={customerId}
           onChange={setCustomerId}
           disabled={pending}
         />
-        
+      </section>
+
+      <section className="space-y-2">
+        <Label id="sale-payment-method-label" htmlFor="sale-payment-method">
+          Payment Method
+        </Label>
+        <Select
+          value={paymentMethod}
+          onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}
+          disabled={pending}
+          required
+        >
+          <SelectTrigger
+            id="sale-payment-method"
+            aria-labelledby="sale-payment-method-label"
+            className="w-full min-h-11"
+          >
+            <SelectValue placeholder="Select payment method" />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_METHOD_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </section>
 
       <div className="rounded-md border border-border bg-muted/30 p-4 text-sm space-y-1">
@@ -726,16 +851,30 @@ export function ApplianceSaleInvoiceForm() {
           </p>
         ) : null}
         <p className="text-muted-foreground">
-          {hasReductions ? 'Net subtotal' : 'Estimated subtotal'}:{' '}
+          {hasReductions ? 'Taxable subtotal' : 'Estimated taxable subtotal'}:{' '}
           <span className="font-medium text-foreground tabular-nums">
             {formatMoney(previewSubtotal)}
           </span>
         </p>
-        {previewTax > 0 ? (
+        <p className="text-muted-foreground">
+          Tax (7.65%):{' '}
+          <span className="font-medium text-foreground tabular-nums">
+            {formatMoney(previewTax)}
+          </span>
+        </p>
+        {previewNonTaxableFees > 0 ? (
           <p className="text-muted-foreground">
-            Tax:{' '}
+            Non-taxable fees:{' '}
             <span className="font-medium text-foreground tabular-nums">
-              {formatMoney(previewTax)}
+              {formatMoney(previewNonTaxableFees)}
+            </span>
+          </p>
+        ) : null}
+        {paymentMethod === 'credit_card' ? (
+          <p className="text-muted-foreground">
+            Credit card surcharge (3%):{' '}
+            <span className="font-medium text-foreground tabular-nums">
+              {formatMoney(previewSurcharge)}
             </span>
           </p>
         ) : null}
@@ -748,7 +887,10 @@ export function ApplianceSaleInvoiceForm() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending || !applianceId}>
+        <Button
+          type="submit"
+          disabled={pending || !applianceId || !paymentMethod}
+        >
           {pending ? 'Creating…' : 'Create appliance sale invoice'}
         </Button>
         <Button type="button" variant="outline" asChild disabled={pending}>

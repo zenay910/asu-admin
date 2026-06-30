@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
+import type { PaymentMethod } from '@/lib/types/operations'
 
 export type InvoiceActionResult =
   | { ok: true; invoiceId: string }
@@ -31,7 +32,9 @@ export type ApplianceSaleTradeInPayload = {
 export type CreateApplianceSaleInvoicePayload = {
   appliance_id: string
   customer_id?: string | null
+  payment_method: PaymentMethod
   fees: ApplianceSaleFeePayload[]
+  non_taxable_fees?: ApplianceSaleFeePayload[]
   accessories: ApplianceSaleAccessoryPayload[]
   discounts?: ApplianceSaleDiscountPayload[]
   trade_ins?: ApplianceSaleTradeInPayload[]
@@ -101,11 +104,17 @@ export async function createApplianceSaleInvoiceViaApi(
     return { ok: false, error: 'Select an appliance to sell.' }
   }
 
+  if (!input.payment_method) {
+    return { ok: false, error: 'Select a payment method.' }
+  }
+
   const result = await invoicesApiPost({
     invoice_type: 'appliance_sale',
     appliance_id,
     customer_id: input.customer_id?.trim() || null,
+    payment_method: input.payment_method,
     fees: input.fees,
+    non_taxable_fees: input.non_taxable_fees ?? [],
     accessories: input.accessories,
     discounts: input.discounts ?? [],
     trade_ins: input.trade_ins ?? [],
