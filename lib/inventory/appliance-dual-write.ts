@@ -17,6 +17,7 @@ import {
   inventoryPayloadToApplianceInput,
   resolveApplianceStatus,
 } from '@/lib/inventory/appliance-product-mirror'
+import { syncGoogleMerchantOnStatusChange } from '@/lib/google-merchant'
 import { createClient } from '@/lib/supabase/server'
 import type { Appliance, LifecycleState } from '@/lib/types/inventory'
 
@@ -284,6 +285,7 @@ export async function updateApplianceDualWrite(
   )
 
   await updateProductMirror(supabase, appliance)
+  await syncGoogleMerchantOnStatusChange(applianceId, existing.status, status)
   const uploadedImages = await syncImagesFromForm(supabase, formData, applianceId)
 
   revalidateInventoryPaths(applianceId)

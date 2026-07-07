@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAppliance, getApplianceById } from '@/lib/data/appliances'
 import { applianceToProductMirrorPayload } from '@/lib/inventory/appliance-product-mirror'
+import { syncGoogleMerchantOnStatusChange } from '@/lib/google-merchant'
 import { canTransition, getAllowedTransitions } from '@/lib/inventory/lifecycle'
 import { createClient } from '@/lib/supabase/server'
 import type {
@@ -168,6 +169,8 @@ export async function transitionApplianceState(
       `Lifecycle updated but storefront mirror failed; change was rolled back: ${mirrorError.message}`,
     )
   }
+
+  await syncGoogleMerchantOnStatusChange(applianceId, current.status, nextStatus)
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/inventory')
